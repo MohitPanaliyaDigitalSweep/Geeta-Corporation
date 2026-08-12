@@ -1,0 +1,77 @@
+{
+ "app": "fast_entry_app",
+ "creation": "2026-08-05 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "package",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "truck",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Purchase Entry",
+   "link_to": "fast-purchase-entry",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "share",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Sales Entry",
+   "link_to": "fast-sales-entry",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "settings",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Settings",
+   "link_to": "Fast Entry Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "share-2",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "ICT Entry",
+   "link_to": "fast-ict-entry",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "list",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "ICT List",
+   "link_to": "Inter Company Transfer",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-08-05 09:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Fast Entry App",
+ "name": "Fast Entry",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Fast Entry"
+}

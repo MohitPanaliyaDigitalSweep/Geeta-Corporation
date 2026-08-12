@@ -1,0 +1,135 @@
+[
+  {
+    "dt": "Purchase Invoice Item",
+    "fieldname": "fe_box",
+    "fieldtype": "Float",
+    "label": "Box",
+    "insert_after": "item_name",
+    "module": "Fast Entry App",
+    "depends_on": "",
+    "read_only": 0,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Purchase Invoice Item",
+    "fieldname": "fe_pcs",
+    "fieldtype": "Float",
+    "label": "PCS",
+    "insert_after": "fe_box",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Purchase Invoice Item",
+    "fieldname": "fe_ltr",
+    "fieldtype": "Float",
+    "label": "LTR",
+    "insert_after": "fe_pcs",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Purchase Invoice Item",
+    "fieldname": "fe_total_ltr",
+    "fieldtype": "Float",
+    "label": "Total LTR",
+    "insert_after": "fe_ltr",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Sales Invoice Item",
+    "fieldname": "fe_box",
+    "fieldtype": "Float",
+    "label": "Box",
+    "insert_after": "item_name",
+    "module": "Fast Entry App",
+    "read_only": 0,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Sales Invoice Item",
+    "fieldname": "fe_pcs",
+    "fieldtype": "Float",
+    "label": "PCS",
+    "insert_after": "fe_box",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Sales Invoice Item",
+    "fieldname": "fe_ltr",
+    "fieldtype": "Float",
+    "label": "LTR",
+    "insert_after": "fe_pcs",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Sales Invoice Item",
+    "fieldname": "fe_total_ltr",
+    "fieldtype": "Float",
+    "label": "Total LTR",
+    "insert_after": "fe_ltr",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Inter Company Transfer Item",
+    "fieldname": "fe_box",
+    "fieldtype": "Float",
+    "label": "Box",
+    "insert_after": "item_name",
+    "module": "Fast Entry App",
+    "read_only": 0,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Inter Company Transfer Item",
+    "fieldname": "fe_pcs",
+    "fieldtype": "Float",
+    "label": "PCS",
+    "insert_after": "fe_box",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Inter Company Transfer Item",
+    "fieldname": "fe_ltr",
+    "fieldtype": "Float",
+    "label": "LTR",
+    "insert_after": "fe_pcs",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  },
+  {
+    "dt": "Inter Company Transfer Item",
+    "fieldname": "fe_total_ltr",
+    "fieldtype": "Float",
+    "label": "Total LTR",
+    "insert_after": "fe_ltr",
+    "module": "Fast Entry App",
+    "read_only": 1,
+    "reqd": 0,
+    "default": 0
+  }
+]

@@ -1,0 +1,70 @@
+{
+ "app": "fast_entry_app",
+ "charts": [],
+ "creation": "2026-08-05 00:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "truck",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Fast Entry",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Purchase Entry",
+   "link_to": "fast-purchase-entry",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sales Entry",
+   "link_to": "fast-sales-entry",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+   {
+    "hidden": 0,
+    "is_query_report": 0,
+    "label": "Fast Entry Settings",
+    "link_to": "Fast Entry Settings",
+    "link_type": "DocType",
+    "onboard": 0,
+    "type": "Link"
+   },
+    {
+     "hidden": 0,
+     "is_query_report": 0,
+     "label": "ICT Entry",
+     "link_to": "fast-ict-entry",
+     "link_type": "Page",
+     "onboard": 0,
+     "type": "Link"
+    },
+    {
+     "hidden": 0,
+     "is_query_report": 0,
+     "label": "ICT List",
+     "link_to": "Inter Company Transfer",
+     "link_type": "DocType",
+     "onboard": 0,
+     "type": "Link"
+    }
+  ],
+ "modified": "2026-08-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Fast Entry App",
+ "name": "Fast Entry",
+ "owner": "Administrator",
+ "public": 1,
+ "sequence_id": 0.0,
+ "title": "Fast Entry",
+ "type": "Workspace"
+}

@@ -1,0 +1,158 @@
+{
+ "actions": [],
+ "autoname": "format:FAST-SET-{####}",
+ "creation": "2026-08-05 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "default_company",
+  "default_warehouse",
+  "column_break_1",
+  "default_gst_rate",
+  "section_break_purchase",
+  "default_buying_price_list",
+  "default_purchase_tax_template",
+  "column_break_purchase",
+  "auto_increment_bill_no",
+  "section_break_sales",
+  "default_selling_price_list",
+  "default_sales_tax_template",
+  "column_break_sales",
+  "auto_print_after_save",
+  "section_break_behavior",
+  "keep_supplier_after_save",
+  "keep_customer_after_save",
+  "column_break_behavior",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "default_company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Default Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "default_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_gst_rate",
+   "fieldtype": "Float",
+   "label": "Default GST Rate (%)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_purchase",
+   "fieldtype": "Section Break",
+   "label": "Purchase Defaults"
+  },
+  {
+   "fieldname": "default_buying_price_list",
+   "fieldtype": "Link",
+   "label": "Default Buying Price List",
+   "options": "Price List"
+  },
+  {
+   "fieldname": "default_purchase_tax_template",
+   "fieldtype": "Link",
+   "label": "Default Purchase Tax Template",
+   "options": "Purchase Taxes and Charges Template"
+  },
+  {
+   "fieldname": "column_break_purchase",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_increment_bill_no",
+   "fieldtype": "Check",
+   "label": "Auto Increment Bill No"
+  },
+  {
+   "fieldname": "section_break_sales",
+   "fieldtype": "Section Break",
+   "label": "Sales Defaults"
+  },
+  {
+   "fieldname": "default_selling_price_list",
+   "fieldtype": "Link",
+   "label": "Default Selling Price List",
+   "options": "Price List"
+  },
+  {
+   "fieldname": "default_sales_tax_template",
+   "fieldtype": "Link",
+   "label": "Default Sales Tax Template",
+   "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "fieldname": "column_break_sales",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_print_after_save",
+   "fieldtype": "Check",
+   "label": "Auto Print After Save"
+  },
+  {
+   "fieldname": "section_break_behavior",
+   "fieldtype": "Section Break",
+   "label": "Form Behavior"
+  },
+  {
+   "default": "1",
+   "fieldname": "keep_supplier_after_save",
+   "fieldtype": "Check",
+   "label": "Keep Supplier After Save"
+  },
+  {
+   "default": "1",
+   "fieldname": "keep_customer_after_save",
+   "fieldtype": "Check",
+   "label": "Keep Customer After Save"
+  },
+  {
+   "fieldname": "column_break_behavior",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Fast Entry Settings",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-05 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Fast Entry App",
+ "name": "Fast Entry Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

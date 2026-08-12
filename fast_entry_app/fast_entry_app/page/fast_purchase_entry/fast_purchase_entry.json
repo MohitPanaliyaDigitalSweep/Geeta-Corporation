@@ -1,0 +1,20 @@
+{
+ "creation": "2026-08-05 00:00:00",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "octicon octicon-file-directory",
+ "idx": 1,
+ "modified": "2026-08-05 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Fast Entry App",
+ "name": "fast-purchase-entry",
+ "owner": "Administrator",
+ "page_name": "fast-purchase-entry",
+ "roles": [
+  {"role": "Purchase User"},
+  {"role": "Purchase Manager"},
+  {"role": "System Manager"}
+ ],
+ "standard": "Yes",
+ "title": "Fast Purchase Entry"
+}
