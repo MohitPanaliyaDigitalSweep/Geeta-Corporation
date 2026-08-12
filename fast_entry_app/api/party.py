@@ -11,8 +11,9 @@ def search_suppliers(search=None, company=None, limit=20):
     suppliers = []
 
     if company:
-        sql = """
-            SELECT DISTINCT pi.supplier as name, s.supplier_name, s.gstin
+        gstin_expr = "s.gstin" if frappe.db.has_column("Supplier", "gstin") else "'' as gstin"
+        sql = f"""
+            SELECT DISTINCT pi.supplier as name, s.supplier_name, {gstin_expr}
             FROM `tabPurchase Invoice` pi
             INNER JOIN `tabSupplier` s ON s.name = pi.supplier
             WHERE pi.docstatus = 1 AND pi.company = %s
@@ -29,11 +30,14 @@ def search_suppliers(search=None, company=None, limit=20):
                 ["name", "like", f"%{search}%"],
                 ["supplier_name", "like", f"%{search}%"],
             ]
+        fields = ["name", "supplier_name"]
+        if frappe.db.has_column("Supplier", "gstin"):
+            fields.append("gstin")
         suppliers = frappe.get_list(
             "Supplier",
             filters={},
             or_filters=or_filters,
-            fields=["name", "supplier_name", "gstin"],
+            fields=fields,
             limit_page_length=limit,
             order_by="name asc",
         )
@@ -94,8 +98,9 @@ def search_customers(search=None, company=None, limit=20):
     customers = []
 
     if company:
-        sql = """
-            SELECT DISTINCT si.customer as name, c.customer_name, c.gstin
+        gstin_expr = "c.gstin" if frappe.db.has_column("Customer", "gstin") else "'' as gstin"
+        sql = f"""
+            SELECT DISTINCT si.customer as name, c.customer_name, {gstin_expr}
             FROM `tabSales Invoice` si
             INNER JOIN `tabCustomer` c ON c.name = si.customer
             WHERE si.docstatus = 1 AND si.company = %s
@@ -112,11 +117,14 @@ def search_customers(search=None, company=None, limit=20):
                 ["name", "like", f"%{search}%"],
                 ["customer_name", "like", f"%{search}%"],
             ]
+        fields = ["name", "customer_name"]
+        if frappe.db.has_column("Customer", "gstin"):
+            fields.append("gstin")
         customers = frappe.get_list(
             "Customer",
             filters={},
             or_filters=or_filters,
-            fields=["name", "customer_name", "gstin"],
+            fields=fields,
             limit_page_length=limit,
             order_by="name asc",
         )

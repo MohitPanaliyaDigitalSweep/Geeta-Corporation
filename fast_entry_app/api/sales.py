@@ -56,12 +56,14 @@ def create_sales_invoice(data):
         if qty <= 0 or rate <= 0:
             continue
 
-        hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
+        hsn_code = ""
+        if frappe.db.has_column("Item", "gst_hsn_code"):
+            hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
         conversion_factor = flt(item_data.get("conversion_factor")) or 1.0
         amount = flt(pcs * rate)
         total_ltr = flt(item_data.get("total_ltr")) or 0
 
-        si.append("items", {
+        item_row = si.append("items", {
             "item_code": item_code,
             "qty": pcs,
             "rate": rate,
@@ -70,12 +72,13 @@ def create_sales_invoice(data):
             "conversion_factor": 1.0,
             "stock_qty": pcs,
             "warehouse": item_data.get("warehouse") or data.get("warehouse") or "",
-            "gst_hsn_code": hsn_code,
             "fe_box": box,
             "fe_pcs": pcs,
             "fe_ltr": ltr,
             "fe_total_ltr": total_ltr,
         })
+        if frappe.db.has_column("Sales Invoice Item", "gst_hsn_code"):
+            item_row.gst_hsn_code = hsn_code
 
     discount = flt(data.get("discount")) or 0
     if discount > 0:

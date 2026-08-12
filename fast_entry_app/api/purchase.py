@@ -64,7 +64,9 @@ def create_purchase_invoice(data):
         if qty <= 0 or rate <= 0:
             continue
 
-        hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
+        hsn_code = ""
+        if frappe.db.has_column("Item", "gst_hsn_code"):
+            hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
         conversion_factor = flt(item_data.get("conversion_factor")) or 1.0
         amount = flt(pcs * rate)
         total_ltr = flt(item_data.get("total_ltr")) or 0
@@ -78,12 +80,13 @@ def create_purchase_invoice(data):
             "conversion_factor": 1.0,
             "stock_qty": pcs,
             "warehouse": item_data.get("warehouse") or data.get("warehouse") or "",
-            "gst_hsn_code": hsn_code,
             "fe_box": box,
             "fe_pcs": pcs,
             "fe_ltr": ltr,
             "fe_total_ltr": total_ltr,
         })
+        if frappe.db.has_column("Purchase Invoice Item", "gst_hsn_code"):
+            item_row.gst_hsn_code = hsn_code
 
     # Apply discount
     discount = flt(data.get("discount")) or 0
