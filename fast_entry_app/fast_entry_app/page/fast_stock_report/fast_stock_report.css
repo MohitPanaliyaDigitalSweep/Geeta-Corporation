@@ -1,0 +1,145 @@
+/* Fast Entry App - Fast Stock Report Styles */
+
+.fsr-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 12px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    color: #1a1a1a;
+}
+
+.fsr-summary-sub {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 10px;
+}
+
+.fsr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.fsr-table thead th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.fsr-table tbody tr {
+    border-bottom: 1px solid #eef0f3;
+}
+
+.fsr-table tbody tr:hover { background: #f6f9ff; }
+
+.fsr-table tbody td {
+    padding: 7px 10px;
+    vertical-align: middle;
+}
+
+.fsr-num { text-align: right; }
+
+.fsr-table thead th.fsr-num { text-align: right; }
+
+.fsr-col-expand { width: 26px; text-align: center; }
+
+.fsr-row { cursor: pointer; }
+.fsr-row.fsr-expandable { cursor: pointer; }
+.fsr-chevron { color: #9ca3af; font-size: 11px; }
+
+.fsr-code {
+    font-weight: 600;
+    color: #1a1a2e;
+    white-space: nowrap;
+}
+
+.fsr-name { min-width: 220px; }
+
+.fsr-breakdown { background: #fafbfc; }
+.fsr-breakdown td { border-bottom: 1px solid #eef0f3; }
+
+.fsr-bd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    max-width: 720px;
+}
+
+.fsr-bd-table th {
+    text-align: left;
+    font-size: 10px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 3px 8px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.fsr-breakdown td {
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #374151;
+    background: #fafafa;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.fsr-empty {
+    padding: 24px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+.fsr-tx-card .fe-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fsr-tx-actions { display: inline-flex; gap: 6px; }
+
+.fsr-date { white-space: nowrap; }
+.fsr-wh { white-space: nowrap; }
+
+.fsr-tx-card .fe-input {
+    background: #fff;
+}
+
+/* Multi-select */
+.fsr-multi-select { position: relative; }
+.fsr-ms-selected {
+    display: flex; flex-wrap: wrap; gap: 4px; min-height: 32px; padding: 4px 8px;
+    border: 1px solid #d1d8dd; border-radius: 4px; background: #fff; cursor: pointer;
+    align-items: center;
+}
+.fsr-ms-selected:hover { border-color: #5e64ff; }
+.fsr-ms-placeholder { color: #9ca3af; font-size: 12px; }
+.fsr-ms-tag {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+    background: #e8f0fe; border-radius: 4px; font-size: 11px; color: #1a73e8;
+    white-space: nowrap;
+}
+.fsr-ms-remove { cursor: pointer; font-size: 10px; opacity: 0.6; }
+.fsr-ms-remove:hover { opacity: 1; }
+.fsr-ms-dropdown {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1000;
+    max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #d1d8dd;
+    border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); margin-top: 2px;
+}
+.fsr-ms-open .fsr-ms-dropdown { display: block; }
+.fsr-ms-option {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer;
+    font-size: 12px; border-bottom: 1px solid #f3f4f6;
+}
+.fsr-ms-option:hover { background: #f9fafb; }
+.fsr-ms-option input[type="checkbox"] { margin: 0; accent-color: #5e64ff; }

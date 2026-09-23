@@ -1,0 +1,30 @@
+{
+ "content": null,
+ "creation": "2026-08-21 11:21:16.124454",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "octicon octicon-file-directory",
+ "idx": 1,
+ "modified": "2026-08-21 11:21:16.124454",
+ "modified_by": "Administrator",
+ "module": "Fast Entry App",
+ "name": "fast-quotation-entry",
+ "owner": "Administrator",
+ "page_name": "fast-quotation-entry",
+ "roles": [
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Fast Quotation"
+}

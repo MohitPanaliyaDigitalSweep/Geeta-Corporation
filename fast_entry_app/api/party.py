@@ -12,8 +12,9 @@ def search_suppliers(search=None, company=None, limit=20):
 
     if company:
         gstin_expr = "s.gstin" if frappe.db.has_column("Supplier", "gstin") else "'' as gstin"
+        group_expr = "s.fe_group" if frappe.db.has_column("Supplier", "fe_group") else "'' as fe_group"
         sql = f"""
-            SELECT DISTINCT pi.supplier as name, s.supplier_name, {gstin_expr}
+            SELECT DISTINCT pi.supplier as name, s.supplier_name, {gstin_expr}, {group_expr}
             FROM `tabPurchase Invoice` pi
             INNER JOIN `tabSupplier` s ON s.name = pi.supplier
             WHERE pi.docstatus = 1 AND pi.company = %s
@@ -33,6 +34,8 @@ def search_suppliers(search=None, company=None, limit=20):
         fields = ["name", "supplier_name"]
         if frappe.db.has_column("Supplier", "gstin"):
             fields.append("gstin")
+        if frappe.db.has_column("Supplier", "fe_group"):
+            fields.append("fe_group")
         suppliers = frappe.get_list(
             "Supplier",
             filters={},
@@ -86,6 +89,17 @@ def get_supplier_details(supplier, company=None):
     )
     result["credit_days"] = credit_days or 0
 
+    # State for GST type detection - extract from GSTIN (first 2 digits = state code)
+    if company:
+        company_gstin = frappe.db.get_value("Company", company, "gstin") or ""
+        company_state = company_gstin[:2] if len(company_gstin) >= 2 else ""
+        result["company_state"] = company_state
+    supplier_gstin = getattr(supplier_doc, "gstin", "") or ""
+    supplier_state = supplier_gstin[:2] if len(supplier_gstin) >= 2 else ""
+    result["state"] = supplier_state
+    if company:
+        result["gst_type"] = "intra" if supplier_state == company_state and supplier_state else "inter"
+
     return result
 
 
@@ -99,8 +113,9 @@ def search_customers(search=None, company=None, limit=20):
 
     if company:
         gstin_expr = "c.gstin" if frappe.db.has_column("Customer", "gstin") else "'' as gstin"
+        group_expr = "c.fe_group" if frappe.db.has_column("Customer", "fe_group") else "'' as fe_group"
         sql = f"""
-            SELECT DISTINCT si.customer as name, c.customer_name, {gstin_expr}
+            SELECT DISTINCT si.customer as name, c.customer_name, {gstin_expr}, {group_expr}
             FROM `tabSales Invoice` si
             INNER JOIN `tabCustomer` c ON c.name = si.customer
             WHERE si.docstatus = 1 AND si.company = %s
@@ -120,6 +135,8 @@ def search_customers(search=None, company=None, limit=20):
         fields = ["name", "customer_name"]
         if frappe.db.has_column("Customer", "gstin"):
             fields.append("gstin")
+        if frappe.db.has_column("Customer", "fe_group"):
+            fields.append("fe_group")
         customers = frappe.get_list(
             "Customer",
             filters={},
@@ -166,6 +183,16 @@ def get_customer_details(customer, company=None):
     else:
         result["outstanding"] = 0
         result["balance_type"] = "Dr"
+
+    # State for GST type detection - extract from GSTIN (first 2 digits = state code)
+    customer_gstin = getattr(customer_doc, "gstin", "") or ""
+    customer_state = customer_gstin[:2] if len(customer_gstin) >= 2 else ""
+    result["state"] = customer_state
+    if company:
+        company_gstin = frappe.db.get_value("Company", company, "gstin") or ""
+        company_state = company_gstin[:2] if len(company_gstin) >= 2 else ""
+        result["company_state"] = company_state
+        result["gst_type"] = "intra" if customer_state == company_state and customer_state else "inter"
 
     return result
 

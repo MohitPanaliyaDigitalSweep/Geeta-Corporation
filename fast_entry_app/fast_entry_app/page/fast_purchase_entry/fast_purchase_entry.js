@@ -109,6 +109,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                             <input type="text" class="fe-input" id="fe-warehouse" placeholder="Default WH" autocomplete="off" />
                         </div>
                     </div>
+                    <div class="fe-field"><label class="fe-checkbox-label"><input type="checkbox" class="fe-input" id="fe-stock-impact" checked /> Stock Impact</label></div>
                 </div>
             </div>
             <div class="fe-grid-section">
@@ -146,7 +147,8 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             </div>
             <div class="fe-totals-section">
                 <div class="fe-totals-left">
-                    <div class="fe-field fe-field-sm"><label>Discount</label><input type="number" class="fe-input fe-input-sm" id="fe-discount" value="0" min="0" /></div>
+                    <div class="fe-field fe-field-sm"><label>Discount %</label><input type="number" class="fe-input fe-input-sm" id="fe-discount-pct" value="0" min="0" max="100" step="any" /></div>
+                    <div class="fe-field fe-field-sm"><label>Discount Amt</label><input type="number" class="fe-input fe-input-sm" id="fe-discount" value="0" min="0" /></div>
                     <div class="fe-field fe-field-sm"><label>Freight</label><input type="number" class="fe-input fe-input-sm" id="fe-freight" value="0" min="0" /></div>
                 </div>
                 <div class="fe-totals-right">
@@ -154,6 +156,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                         <tr><td>Sub Total</td><td id="fe-sub-total">0.00</td></tr>
                         <tr><td>Discount</td><td id="fe-total-discount">-0.00</td></tr>
                         <tr><td>Freight</td><td id="fe-total-freight">+0.00</td></tr>
+                        <tr class="fe-freight-gst-row" style="display:none"><td>Freight GST @18%</td><td id="fe-freight-gst">0.00</td></tr>
                         <tr class="fe-tax-row" id="fe-cgst-row"><td>CGST</td><td id="fe-cgst-amt">0.00</td></tr>
                         <tr class="fe-tax-row" id="fe-sgst-row"><td>SGST</td><td id="fe-sgst-amt">0.00</td></tr>
                         <tr class="fe-tax-row" id="fe-igst-row" style="display:none"><td>IGST</td><td id="fe-igst-amt">0.00</td></tr>
@@ -166,13 +169,15 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                 <div class="fe-actions-left">
                     <span class="fe-shortcut-hint">Ctrl+S: Save</span>
                     <span class="fe-shortcut-hint">Ctrl+P: Print</span>
-                    <span class="fe-shortcut-hint">F2: Save & New</span>
+                    <span class="fe-shortcut-hint">F2: Save &amp; New</span>
                     <span class="fe-shortcut-hint">F3: Add Row</span>
                 </div>
                 <div class="fe-actions-right">
+                    <button class="fe-btn fe-btn-wa" id="fe-wa-send" title="Send purchase invoice PDF via WhatsApp"><i class="fa fa-whatsapp"></i> WhatsApp</button>
+                    <button class="fe-btn fe-btn-email" id="fe-email-send" title="Send purchase invoice PDF via Email"><i class="fa fa-envelope"></i> Email</button>
                     <button class="fe-btn fe-btn-primary" id="fe-save"><i class="fa fa-check"></i> Save (Ctrl+S)</button>
                     <button class="fe-btn" id="fe-print-btn"><i class="fa fa-print"></i> Print (Ctrl+P)</button>
-                    <button class="fe-btn fe-btn-success" id="fe-save-new"><i class="fa fa-forward"></i> Save & New (F2)</button>
+                    <button class="fe-btn fe-btn-success" id="fe-save-new"><i class="fa fa-forward"></i> Save &amp; New (F2)</button>
                 </div>
             </div>
             <div class="fe-status-bar" id="fe-status-bar"></div>
@@ -189,7 +194,9 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$gst_type = this.$root.find("#fe-gst-type");
         this.$tax_template = this.$root.find("#fe-tax-template");
         this.$warehouse = this.$root.find("#fe-warehouse");
+        this.$stock_impact = this.$root.find("#fe-stock-impact");
         this.$discount = this.$root.find("#fe-discount");
+        this.$discount_pct = this.$root.find("#fe-discount-pct");
         this.$freight = this.$root.find("#fe-freight");
         this.$status_bar = this.$root.find("#fe-status-bar");
 
@@ -200,7 +207,22 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$root.find("#fe-save").on("click", () => this.save());
         this.$root.find("#fe-save-new").on("click", () => this.save_and_new());
         this.$root.find("#fe-print-btn").on("click", () => this.print_last());
-        this.$discount.on("input", () => this.update_totals());
+        this.$root.find("#fe-wa-send").on("click", () => this.send_whatsapp());
+        this.$root.find("#fe-email-send").on("click", () => this.send_email());
+        this.$discount.on("input", () => {
+            const sub_total = this.items.reduce((s, r) => s + (r.amount || 0), 0);
+            const amt = this.flt(this.$discount.val());
+            if (sub_total > 0) {
+                this.$discount_pct.val((amt / sub_total * 100).toFixed(2));
+            }
+            this.update_totals();
+        });
+        this.$discount_pct.on("input", () => {
+            const sub_total = this.items.reduce((s, r) => s + (r.amount || 0), 0);
+            const pct = this.flt(this.$discount_pct.val());
+            this.$discount.val((sub_total * pct / 100).toFixed(2));
+            this.update_totals();
+        });
         this.$freight.on("input", () => this.update_totals());
         this.$tax_template.on("change", () => this.update_totals());
         this.$gst_type.on("change", () => this.update_totals());
@@ -216,7 +238,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             args: { doctype: "Company", filters: {}, fields: ["name"], limit_page_length: 100 },
             callback: function(r) {
                 const companies = r.message || [];
-                self.$company.empty().append('<option value="">Select Company</option>');
+                self.$company.empty().append('<option value="">Select Company</option><option value="All">All Companies</option>');
                 companies.forEach(c => self.$company.append(`<option value="${c.name}">${c.name}</option>`));
                 if (companies.length === 1) {
                     self.$company.val(companies[0].name);
@@ -235,7 +257,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
 
     add_empty_row() {
         const idx = this.items.length + 1;
-        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, rate:0, amount:0, uom:"", nos_factor:1, litre_factor:1, stock_uom:"", warehouse:"", gst_rate:0 };
+        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, rate:0, amount:0, uom:"", nos_factor:1, litre_factor:0, stock_uom:"", warehouse:"", gst_rate:0, wh_stock:0, company_stock:0 };
         this.items.push(row);
         this.render_row(row);
     }
@@ -244,6 +266,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         const tr = document.createElement("tr");
         tr.dataset.idx = row.idx;
         tr.className = "fe-grid-row";
+        row._tr = tr;
         tr.innerHTML = `
             <td class="fe-col-num">${row.idx}</td>
             <td class="fe-col-item">
@@ -251,6 +274,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                     <input type="text" class="fe-grid-input fe-item-input" data-field="item_code" value="${row.item_name||row.item_code}" placeholder="Search..." autocomplete="off" />
                 </div>
                 <div class="fe-item-code">${row.item_code||""}</div>
+                <div class="fe-item-stock"></div>
             </td>
             <td class="fe-col-box"><input type="number" class="fe-grid-input fe-num-input" data-field="box" value="${row.box||""}" min="0" step="1" /></td>
             <td class="fe-col-pcs"><input type="number" class="fe-grid-input fe-num-input" data-field="pcs" value="${row.pcs||""}" min="0" /></td>
@@ -326,23 +350,14 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
 
     calculate_row(row, tr, source) {
         const nf = row.nos_factor || 1;
-        const lf = row.litre_factor || 1;
-        if (source === "ltr") {
-            row.qty = row.ltr;
-            row.pcs = row.qty && lf ? this.flt(row.qty / (lf / nf)) : 0;
-            row.box = row.pcs && nf ? this.flt(row.pcs / nf) : 0;
-        } else if (source === "pcs") {
-            row.pcs = this.flt(row.pcs);
-            row.box = row.pcs && nf ? this.flt(row.pcs / nf) : 0;
-            row.ltr = this.flt(lf / nf);
-            row.qty = this.flt(row.pcs * (lf / nf));
-        } else {
+        if (source === "box") {
             row.pcs = this.flt(row.box * nf);
-            row.ltr = this.flt(lf / nf);
-            row.qty = this.flt(row.box * lf);
+        } else if (source === "pcs") {
+            row.box = row.pcs && nf ? this.flt(row.pcs / nf) : 0;
         }
+        row.qty = this.flt(row.pcs * row.ltr);
         row.amount = this.flt(row.pcs * row.rate);
-        row.conversion_factor = lf ? this.flt(1 / lf) : 1;
+        row.conversion_factor = row.ltr ? this.flt(1 / row.ltr) : 1;
         $(tr).find("[data-field='box']").val(row.box || "");
         $(tr).find("[data-field='pcs']").val(row.pcs || "");
         $(tr).find("[data-field='ltr']").val(row.ltr || "");
@@ -389,14 +404,16 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                         const nos_uom = uoms.find(u => u.uom === "Nos");
                         const litre_uom = uoms.find(u => u.uom === "Litre" || u.uom === "Kg");
                         if (nos_uom) row.nos_factor = nos_uom.conversion_factor || 1;
-                        if (litre_uom) row.litre_factor = litre_uom.conversion_factor || 1;
+                        if (litre_uom) row.litre_factor = litre_uom.conversion_factor || 0;
                     }
+                    row.ltr = row.litre_factor;
                     if (!row.warehouse && warehouse) row.warehouse = warehouse;
                     else if (d.warehouse) row.warehouse = d.warehouse;
                     if (!row.rate && d.rate) { row.rate = d.rate; $(tr).find("[data-field='rate']").val(row.rate); }
                     $(tr).find(".fe-item-input").val(row.item_name).attr("data-item-code", row.item_code);
                     $(tr).find(".fe-item-code").text(row.item_code);
                     self.calculate_row(row, tr);
+                    self.load_stock(row);
                 }
             },
         });
@@ -459,8 +476,13 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                     self.supplier_details = r.message;
                     const d = r.message;
                     const bal = d.outstanding || 0;
-                    const sign = d.balance_type === "Cr" ? " Cr" : " Dr";
-                    self.$supplier_balance.text("Balance: " + (bal).toFixed(2) + sign);
+                    const is_unpaid = d.balance_type === "Dr";
+                    const label = is_unpaid ? "Unpaid" : "Advance";
+                    const cls = is_unpaid ? "fe-balance-unpaid" : "fe-balance-advance";
+                    self.$supplier_balance.html('<span class="fe-balance-tag ' + cls + '">' + label + ': &#8377;' + bal.toFixed(2) + '</span>');
+                    if (d.gst_type) {
+                        self.$gst_type.val(d.gst_type).trigger("change");
+                    }
                 }
             },
         });
@@ -471,6 +493,69 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             method: "fast_entry_app.api.warehouse.search_warehouses",
             args: { search: query, company: this.$company.val() || "", limit: 15 },
             callback: function(r) { callback(r.message || []); },
+        });
+    }
+
+    load_stock(row) {
+        const self = this;
+        const company = this.$company.val();
+        if (!row.item_code || !company) return;
+        if (company === "All") {
+            frappe.call({
+                method: "fast_entry_app.api.item.get_item_stock_all",
+                args: { item_code: row.item_code },
+                callback: function(r) {
+                    if (!r.message) return;
+                    const m = r.message;
+                    row.all_stock = m.company_stock || [];
+                    row.company_stock = m.total_actual_qty || 0;
+                    row.wh_stock = 0;
+                    self.render_stock(row);
+                },
+            });
+        } else {
+            frappe.call({
+                method: "fast_entry_app.api.item.get_item_stock",
+                args: { item_code: row.item_code, company: company, warehouse: row.warehouse || "" },
+                callback: function(r) {
+                    if (!r.message) return;
+                    const m = r.message;
+                    row.wh_stock = (m.current_stock && m.current_stock.actual_qty) || 0;
+                    row.company_stock = m.total_actual_qty || 0;
+                    row.all_stock = [];
+                    self.render_stock(row);
+                },
+            });
+        }
+    }
+
+    render_stock(row) {
+        if (!row._tr) return;
+        const $el = $(row._tr).find(".fe-item-stock");
+        if (!$el.length) return;
+        const company = this.$company.val();
+        if (company === "All" && row.all_stock && row.all_stock.length) {
+            const by_company = {};
+            row.all_stock.forEach(s => {
+                if (!by_company[s.company]) by_company[s.company] = 0;
+                by_company[s.company] += flt(s.actual_qty);
+            });
+            const parts = Object.keys(by_company).map(c => c + ": " + this.flt(by_company[c]));
+            $el.text("All: " + this.flt(row.company_stock) + " (" + parts.join(" | ") + ")");
+        } else {
+            const wh = row.warehouse || this.$warehouse.val() || "-";
+            $el.text("WH " + wh + ": " + this.flt(row.wh_stock) + " | Company: " + this.flt(row.company_stock));
+        }
+    }
+
+    on_warehouse_change() {
+        const self = this;
+        const wh = this.$warehouse.val();
+        this.items.forEach(function(row) {
+            if (row.item_code) {
+                row.warehouse = wh || row.warehouse;
+                self.load_stock(row);
+            }
         });
     }
 
@@ -487,6 +572,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                 if (html) {
                     self.show_global_dropdown(self.$warehouse, html, function($el) {
                         self.$warehouse.val($el.data("value"));
+                        self.on_warehouse_change();
                     });
                 } else {
                     self.hide_global_dropdown();
@@ -502,11 +588,13 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             else if (e.key === "Escape") { self.hide_global_dropdown(); }
         });
         this.$warehouse.on("blur", function() { setTimeout(() => self.hide_global_dropdown(), 150); });
+        this.$warehouse.on("change", function() { self.on_warehouse_change(); });
     }
 
     bind_keyboard() {
         const self = this;
         $(document).off("keydown.fast_entry").on("keydown.fast_entry", function(e) {
+            if (!self.$root.is(":visible")) return;
             if (e.target.classList.contains("fe-global-dropdown")) return;
             const tag = e.target.tagName;
             const inInput = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT");
@@ -547,15 +635,16 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         });
 
         this.$root.find("#fe-total-count").text(item_count);
-        this.$root.find("#fe-total-box").text(total_box || 0);
-        this.$root.find("#fe-total-pcs").text(total_pcs || 0);
+        this.$root.find("#fe-total-box").text(total_box.toFixed(2));
+        this.$root.find("#fe-total-pcs").text(total_pcs.toFixed(2));
         this.$root.find("#fe-total-ltr").text((total_ltr).toFixed(2));
         this.$root.find("#fe-total-qty").text((total_qty).toFixed(2));
         this.$root.find("#fe-total-amount").text(sub_total.toFixed(2));
 
         const discount = this.flt(this.$discount.val());
         const freight = this.flt(this.$freight.val());
-        const after_discount = sub_total - discount + freight;
+        const freight_gst = freight * 0.18;
+        const after_discount = sub_total - discount + freight + freight_gst;
 
         const tax_override = parseFloat(this.$tax_template.val()) || 0;
         const gst_type = this.$gst_type.val();
@@ -581,11 +670,15 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$root.find("#fe-sub-total").text(sub_total.toFixed(2));
         this.$root.find("#fe-total-discount").text("-" + discount.toFixed(2));
         this.$root.find("#fe-total-freight").text("+" + freight.toFixed(2));
+        this.$root.find("#fe-freight-gst").text("+" + freight_gst.toFixed(2));
         this.$root.find("#fe-cgst-amt").text(cgst.toFixed(2));
         this.$root.find("#fe-sgst-amt").text(sgst.toFixed(2));
         this.$root.find("#fe-igst-amt").text(igst.toFixed(2));
         this.$root.find("#fe-round-off").text(round_off.toFixed(2));
         this.$root.find("#fe-net-total").text(net_total.toFixed(2));
+
+        if (freight > 0) { this.$root.find(".fe-freight-gst-row").show(); }
+        else { this.$root.find(".fe-freight-gst-row").hide(); }
 
         if (gst_type === "intra") { this.$root.find("#fe-cgst-row, #fe-sgst-row").show(); this.$root.find("#fe-igst-row").hide(); }
         else { this.$root.find("#fe-cgst-row, #fe-sgst-row").hide(); this.$root.find("#fe-igst-row").show(); }
@@ -613,8 +706,11 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             gst_type: this.$gst_type.val(),
             tax_override: parseFloat(this.$tax_template.val()) || 0,
             warehouse: this.$warehouse.val(),
+            update_stock: this.$stock_impact.prop("checked") ? 1 : 0,
             discount: this.flt(this.$discount.val()),
+            discount_pct: this.flt(this.$discount_pct.val()),
             freight: this.flt(this.$freight.val()),
+            freight_gst: this.flt(this.$freight.val()) * 0.18,
             items: this.items.filter(r => r.item_code).map(r => ({
                 item_code: r.item_code, item_name: r.item_name, box: r.box, pcs: r.pcs,
                 ltr: r.ltr, qty: r.qty, rate: r.rate, amount: r.amount, uom: "Litre",
@@ -626,7 +722,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         };
     }
 
-    save() {
+    save(on_success) {
         const errors = this.validate();
         if (errors.length) { frappe.msgprint({title:"Validation Error", indicator:"red", message:errors.join("<br>")}); return; }
         const self = this;
@@ -642,6 +738,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                     self.last_saved_name = r.message.name;
                     frappe.show_alert({ message: __("Invoice {0} saved", [r.message.name]), indicator: "green" });
                     self.$status_bar.html('<span class="fe-status-ok"><i class="fa fa-check"></i> Saved: ' + r.message.name + '</span>');
+                    if (on_success) on_success();
                 }
             },
             error: function() {
@@ -652,8 +749,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
 
     save_and_new() {
         const keep = this.$supplier.val();
-        this.save();
-        setTimeout(() => { this.clear_form(keep); }, 1500);
+        this.save(() => { this.clear_form(keep); });
     }
 
     clear_form(keep_supplier) {
@@ -662,8 +758,10 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$bill_no.val("");
         this.$bill_date.val(frappe.datetime.get_today());
         this.$discount.val(0);
+        this.$discount_pct.val(0);
         this.$freight.val(0);
         this.$tax_template.val("");
+        this.$stock_impact.prop("checked", true);
         if (!keep_supplier) { this.$supplier.val(""); this.$supplier_balance.text(""); this.supplier_details = {}; }
         this.add_empty_row();
         this.update_totals();
@@ -674,5 +772,117 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
     print_last() {
         if (this.last_saved_name) window.open("/printview?doctype=Purchase Invoice&name=" + this.last_saved_name, "_blank");
         else frappe.msgprint("No invoice saved yet.");
+    }
+
+    send_whatsapp() {
+        if (!this.last_saved_name) { frappe.msgprint("Save the purchase invoice first, then click WhatsApp to send it."); return; }
+        this.do_wa_send();
+    }
+
+    _download_pdf(pdf_url) {
+        const a = document.createElement("a");
+        a.href = pdf_url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    do_wa_send(number) {
+        const self = this;
+        const args = { purchase_invoice_name: this.last_saved_name };
+        if (number) args.number = number;
+        self.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Opening WhatsApp...</span>');
+        frappe.call({
+            method: "fast_entry_app.api.invoice_send.send_purchase_invoice_whatsapp",
+            args: args,
+            callback: function(r) {
+                if (r.message && r.message.ok) {
+                    self.$status_bar.html('<span class="fe-status-ok"><i class="fa fa-whatsapp"></i> Purchase Invoice ' + r.message.name + ' — PDF downloading, WhatsApp opening</span>');
+                    frappe.show_alert({ message: "PDF downloading for " + r.message.name, indicator: "green" });
+                    if (r.message.pdf_url) self._download_pdf(r.message.pdf_url);
+                    if (r.message.wa_url) window.open(r.message.wa_url, "_blank");
+                } else if (r.message && r.message.missing_field) {
+                    self._prompt_missing_field(r.message, "whatsapp");
+                } else {
+                    self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> WhatsApp failed</span>');
+                    frappe.msgprint((r.message && r.message.message) || "WhatsApp failed.");
+                }
+            },
+            error: function(r) {
+                self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> WhatsApp failed</span>');
+                frappe.msgprint("WhatsApp failed.");
+            },
+        });
+    }
+
+    _prompt_missing_field(info, send_type) {
+        const self = this;
+        const is_mobile = info.missing_field === "mobile_no";
+        const label = is_mobile ? "Mobile Number" : "Email Address";
+        const fieldtype = is_mobile ? "Phone" : "Data";
+        frappe.prompt(
+            {
+                fieldname: "value",
+                fieldtype: fieldtype,
+                label: label,
+                reqd: 1,
+                options: is_mobile ? "Phone" : "Email",
+            },
+            function(values) {
+                frappe.call({
+                    method: "fast_entry_app.api.invoice_send.update_party_field",
+                    args: {
+                        party_type: info.party_type,
+                        party_name: info.party_name,
+                        fieldname: info.missing_field,
+                        value: values.value,
+                    },
+                    callback: function() {
+                        frappe.show_alert({ message: label + " saved to " + info.party_name, indicator: "green" });
+                        if (send_type === "whatsapp") {
+                            self.do_wa_send(values.value);
+                        } else {
+                            self.do_email_send(values.value);
+                        }
+                    },
+                });
+            },
+            __("Enter {0} for {1}", [label, info.party_name]),
+            __("Save & Send")
+        );
+    }
+
+    do_email_send(recipient) {
+        const self = this;
+        const args = { purchase_invoice_name: this.last_saved_name };
+        if (recipient) args.recipient = recipient;
+        self.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Sending email...</span>');
+        frappe.call({
+            method: "fast_entry_app.api.invoice_send.send_purchase_invoice_email",
+            args: args,
+            freeze: true,
+            freeze_message: "Sending purchase invoice by email...",
+            callback: function(r) {
+                if (r.message && r.message.ok) {
+                    self.$status_bar.html('<span class="fe-status-ok"><i class="fa fa-envelope"></i> Purchase Invoice ' + r.message.name + ' sent to ' + r.message.email + '</span>');
+                    frappe.show_alert({ message: "Purchase Invoice sent to " + r.message.email, indicator: "green" });
+                } else if (r.message && r.message.missing_field) {
+                    self._prompt_missing_field(r.message, "email");
+                } else {
+                    self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Email failed</span>');
+                    frappe.msgprint((r.message && r.message.message) || "Email failed.");
+                }
+            },
+            error: function(r) {
+                self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Email failed</span>');
+                frappe.msgprint("Email failed.");
+            },
+        });
+    }
+
+    send_email() {
+        if (!this.last_saved_name) { frappe.msgprint("Save the purchase invoice first, then click Email to send it."); return; }
+        this.do_email_send();
     }
 };

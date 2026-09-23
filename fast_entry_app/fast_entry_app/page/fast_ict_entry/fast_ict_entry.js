@@ -111,9 +111,10 @@ fast_entry_app.ICTEntry = class ICTEntry {
                 <div class="fe-totals-right">
                     <table class="fe-totals-table">
                         <tr><td>Total Box</td><td id="fe-total-box-display">0</td></tr>
-                        <tr><td>Total PCS</td><td id="fe-total-pcs-display">0</td></tr>
-                        <tr><td>Total Litre</td><td id="fe-total-qty-display">0.00</td></tr>
-                        <tr><td>Total Amount</td><td id="fe-total-amount-display">0.00</td></tr>
+                        <tr><td>Total Qty (PCS)</td><td id="fe-total-pcs-display">0</td></tr>
+                        <tr><td>Total Ltr</td><td id="fe-total-qty-display">0.00</td></tr>
+                        <tr><td>Net Total (INR)</td><td id="fe-net-total-display">0.00</td></tr>
+                        <tr><td>Tax</td><td id="fe-tax-total-display">0.00</td></tr>
                         <tr class="fe-net-total"><td><b>Grand Total</b></td><td><b id="fe-grand-total">0.00</b></td></tr>
                     </table>
                 </div>
@@ -127,6 +128,17 @@ fast_entry_app.ICTEntry = class ICTEntry {
                 <div class="fe-actions-right">
                     <button class="fe-btn fe-btn-primary" id="fe-save"><i class="fa fa-check"></i> Save (Ctrl+S)</button>
                     <button class="fe-btn fe-btn-success" id="fe-save-new"><i class="fa fa-forward"></i> Save & New (F2)</button>
+                </div>
+            </div>
+            <div class="fe-tax-preview-section" id="fe-tax-preview-section">
+                <div class="fe-tax-preview-card">
+                    <div class="fe-tax-preview-header">
+                        <i class="fa fa-calculator"></i> Tax Preview
+                        <span class="fe-tax-preview-subtitle" id="fe-tax-preview-subtitle"></span>
+                    </div>
+                    <div class="fe-tax-preview-body" id="fe-tax-preview-body">
+                        <div class="fe-tax-empty">Select a tax template to see tax breakdown</div>
+                    </div>
                 </div>
             </div>
             <div class="fe-status-bar" id="fe-status-bar"></div>
@@ -149,14 +161,19 @@ fast_entry_app.ICTEntry = class ICTEntry {
         this.$purchase_tax_template = this.$root.find("#fe-purchase-tax-template");
         this.$remarks = this.$root.find("#fe-remarks");
         this.$status_bar = this.$root.find("#fe-status-bar");
+        this.$tax_preview_body = this.$root.find("#fe-tax-preview-body");
+        this.$tax_preview_subtitle = this.$root.find("#fe-tax-preview-subtitle");
         this.$posting_date.val(frappe.datetime.get_today());
+        this.tax_templates = { sales: [], purchase: [] };
         this.load_companies();
         this.load_tax_templates();
         this.$root.find("#fe-add-row").on("click", () => this.add_empty_row());
         this.$root.find("#fe-save").on("click", () => this.save());
         this.$root.find("#fe-save-new").on("click", () => this.save_and_new());
-        this.$source_company.on("change", () => localStorage.setItem("fe_ict_source_company", this.$source_company.val()));
-        this.$target_company.on("change", () => localStorage.setItem("fe_ict_target_company", this.$target_company.val()));
+        this.$source_company.on("change", () => { localStorage.setItem("fe_ict_source_company", this.$source_company.val()); this.update_tax_preview(); });
+        this.$target_company.on("change", () => { localStorage.setItem("fe_ict_target_company", this.$target_company.val()); this.update_tax_preview(); });
+        this.$sales_tax_template.on("change", () => this.update_tax_preview());
+        this.$purchase_tax_template.on("change", () => this.update_tax_preview());
     }
 
     load_companies() {
@@ -176,25 +193,31 @@ fast_entry_app.ICTEntry = class ICTEntry {
 
     load_tax_templates() {
         const self = this;
-        frappe.call({ method: "frappe.client.get_list", args: { doctype: "Sales Taxes and Charges Template", filters: {}, fields: ["name", "company"], limit_page_length: 100 },
+        frappe.call({ method: "fast_entry_app.api.ict.get_tax_templates_with_details", args: {},
             callback: function(r) {
-                const templates = r.message || [];
+                const data = r.message || { sales: [], purchase: [] };
+                self.tax_templates = data;
+
                 self.$sales_tax_template.empty().append('<option value="">Auto (Company Default)</option>');
-                templates.forEach(t => self.$sales_tax_template.append(`<option value="${t.name}">${t.name}</option>`));
-            }
-        });
-        frappe.call({ method: "frappe.client.get_list", args: { doctype: "Purchase Taxes and Charges Template", filters: {}, fields: ["name", "company"], limit_page_length: 100 },
-            callback: function(r) {
-                const templates = r.message || [];
+                data.sales.forEach(t => {
+                    const rates = t.taxes.map(tx => tx.rate + "%").join("+");
+                    const label = rates ? `${t.name} (${rates})` : t.name;
+                    self.$sales_tax_template.append(`<option value="${t.name}">${label}</option>`);
+                });
+
                 self.$purchase_tax_template.empty().append('<option value="">Auto (Company Default)</option>');
-                templates.forEach(t => self.$purchase_tax_template.append(`<option value="${t.name}">${t.name}</option>`));
+                data.purchase.forEach(t => {
+                    const rates = t.taxes.map(tx => tx.rate + "%").join("+");
+                    const label = rates ? `${t.name} (${rates})` : t.name;
+                    self.$purchase_tax_template.append(`<option value="${t.name}">${label}</option>`);
+                });
             }
         });
     }
 
     add_empty_row() {
         const idx = this.items.length + 1;
-        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, uom:"Nos", rate:0, amount:0, source_warehouse:"", target_warehouse:"", nos_factor:1, litre_factor:1, stock_uom:"" };
+        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, uom:"Nos", rate:0, amount:0, source_warehouse:"", target_warehouse:"", nos_factor:1, litre_factor:0, stock_uom:"" };
         this.items.push(row);
         this.render_row(row);
     }
@@ -269,23 +292,14 @@ fast_entry_app.ICTEntry = class ICTEntry {
 
     calculate_row(row, tr, source) {
         const nf = row.nos_factor || 1;
-        const lf = row.litre_factor || 1;
-        if (source === "ltr") {
-            row.qty = row.ltr;
-            row.pcs = row.qty && lf ? this.flt(row.qty / (lf / nf)) : 0;
-            row.box = row.pcs && nf ? this.flt(row.pcs / nf) : 0;
-        } else if (source === "pcs") {
-            row.pcs = this.flt(row.pcs);
-            row.box = row.pcs && nf ? this.flt(row.pcs / nf) : 0;
-            row.ltr = this.flt(lf / nf);
-            row.qty = this.flt(row.pcs * (lf / nf));
-        } else {
+        if (source === "box") {
             row.pcs = this.flt(row.box * nf);
-            row.ltr = this.flt(lf / nf);
-            row.qty = this.flt(row.box * lf);
+        } else if (source === "pcs") {
+            row.box = row.pcs && nf ? this.flt(row.pcs / nf) : 0;
         }
+        row.qty = this.flt(row.pcs * row.ltr);
         row.amount = this.flt(row.pcs * row.rate);
-        row.conversion_factor = lf ? this.flt(1 / lf) : 1;
+        row.conversion_factor = row.ltr ? this.flt(1 / row.ltr) : 1;
         $(tr).find("[data-field='box']").val(row.box || "");
         $(tr).find("[data-field='pcs']").val(row.pcs || "");
         $(tr).find("[data-field='ltr']").val(row.ltr || "");
@@ -310,7 +324,8 @@ fast_entry_app.ICTEntry = class ICTEntry {
                 if (r.message) {
                     const d = r.message;
                     row.nos_factor = d.nos_factor || 1;
-                    row.litre_factor = d.litre_factor || 1;
+                    row.litre_factor = d.litre_factor || 0;
+                    row.ltr = row.litre_factor;
                     row.stock_uom = d.stock_uom || "Nos";
                     row.uom = d.stock_uom || "Nos";
                     self.calculate_row(row, tr);
@@ -399,6 +414,7 @@ fast_entry_app.ICTEntry = class ICTEntry {
     bind_keyboard() {
         const self = this;
         $(document).off("keydown.fast_ict_entry").on("keydown.fast_ict_entry", function(e) {
+            if (!self.$root.is(":visible")) return;
             if (e.target.classList.contains("fe-global-dropdown")) return;
             const tag = e.target.tagName, inInput = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT");
             if (inInput) { if (e.ctrlKey && e.key === "s") { e.preventDefault(); self.save(); return; } if (e.key === "F2") { e.preventDefault(); self.save_and_new(); return; } if (e.key === "F3") { e.preventDefault(); self.add_empty_row(); return; }
@@ -408,19 +424,121 @@ fast_entry_app.ICTEntry = class ICTEntry {
     }
 
     update_totals() {
-        let total_box = 0, total_pcs = 0, total_ltr = 0, total_qty = 0, total_amount = 0, item_count = 0;
-        this.items.forEach(row => { if (row.item_code) item_count++; total_box += this.flt(row.box); total_pcs += this.flt(row.pcs); total_ltr += this.flt(row.ltr); total_qty += this.flt(row.qty); total_amount += this.flt(row.amount); });
+        let total_box = 0, total_pcs = 0, total_ltr = 0, total_amount = 0, item_count = 0;
+        this.items.forEach(row => {
+            if (row.item_code) item_count++;
+            total_box += this.flt(row.box);
+            total_pcs += this.flt(row.pcs);
+            total_ltr += this.flt(row.ltr);
+            total_amount += this.flt(row.pcs) * this.flt(row.rate);
+        });
         this.$root.find("#fe-total-count").text(item_count);
-        this.$root.find("#fe-total-box").text(total_box || 0);
-        this.$root.find("#fe-total-pcs").text(total_pcs || 0);
-        this.$root.find("#fe-total-ltr").text((total_ltr).toFixed(2));
-        this.$root.find("#fe-total-qty").text((total_qty).toFixed(2));
+        this.$root.find("#fe-total-box").text(total_box.toFixed(2));
+        this.$root.find("#fe-total-pcs").text(total_pcs.toFixed(2));
+        this.$root.find("#fe-total-ltr").text(total_ltr.toFixed(2));
+        this.$root.find("#fe-total-qty").text(total_pcs.toFixed(2));
         this.$root.find("#fe-total-amount").text(total_amount.toFixed(2));
-        this.$root.find("#fe-total-box-display").text(total_box || 0);
-        this.$root.find("#fe-total-pcs-display").text(total_pcs || 0);
-        this.$root.find("#fe-total-qty-display").text((total_qty).toFixed(2));
-        this.$root.find("#fe-total-amount-display").text(total_amount.toFixed(2));
-        this.$root.find("#fe-grand-total").text(total_amount.toFixed(2));
+        this.$root.find("#fe-total-box-display").text(total_box.toFixed(2));
+        this.$root.find("#fe-total-pcs-display").text(total_pcs.toFixed(0));
+        this.$root.find("#fe-total-qty-display").text(total_ltr.toFixed(2));
+        this.update_tax_preview();
+    }
+
+    update_tax_preview() {
+        const self = this;
+        const items = this.items.filter(r => r.item_code).map(r => ({
+            item_code: r.item_code, pcs: r.pcs, rate: r.rate, amount: r.amount
+        }));
+
+        const sales_template = this.$sales_tax_template.val() || "";
+        const purchase_template = this.$purchase_tax_template.val() || "";
+
+        if (!sales_template && !purchase_template) {
+            const net_total = items.reduce((s, r) => s + this.flt(r.amount), 0);
+            this.$root.find("#fe-net-total-display").text(net_total.toFixed(2));
+            this.$root.find("#fe-tax-total-display").text("0.00");
+            this.$root.find("#fe-grand-total").text(net_total.toFixed(2));
+            this.$tax_preview_body.html('<div class="fe-tax-empty">Select a tax template to see tax breakdown</div>');
+            this.$tax_preview_subtitle.text("");
+            return;
+        }
+
+        let pending = 0;
+        const results = {};
+
+        function render() {
+            if (pending > 0) return;
+            self.render_tax_preview_body(results.sales, results.purchase, items);
+        }
+
+        if (sales_template) {
+            pending++;
+            frappe.call({
+                method: "fast_entry_app.api.ict.calculate_tax_preview",
+                args: { items_json: JSON.stringify(items), template_name: sales_template, tax_type: "sales" },
+                callback: function(r) { results.sales = r.message; pending--; render(); },
+                error: function() { pending--; render(); }
+            });
+        }
+        if (purchase_template) {
+            pending++;
+            frappe.call({
+                method: "fast_entry_app.api.ict.calculate_tax_preview",
+                args: { items_json: JSON.stringify(items), template_name: purchase_template, tax_type: "purchase" },
+                callback: function(r) { results.purchase = r.message; pending--; render(); },
+                error: function() { pending--; render(); }
+            });
+        }
+    }
+
+    render_tax_preview_body(sales_result, purchase_result, items) {
+        const net_total = items.reduce((s, r) => s + this.flt(r.amount), 0);
+        let total_tax = 0;
+        let html = '';
+
+        if (sales_result) {
+            html += this.build_tax_table("Sales (Source)", sales_result);
+            total_tax += sales_result.total_tax || 0;
+        }
+        if (purchase_result) {
+            html += this.build_tax_table("Purchase (Target)", purchase_result);
+            total_tax += purchase_result.total_tax || 0;
+        }
+
+        if (!html) {
+            html = '<div class="fe-tax-empty">No tax rows in selected templates</div>';
+        }
+
+        this.$tax_preview_body.html(html);
+        this.$root.find("#fe-net-total-display").text(net_total.toFixed(2));
+        this.$root.find("#fe-tax-total-display").text(total_tax.toFixed(2));
+        this.$root.find("#fe-grand-total").text((net_total + total_tax).toFixed(2));
+
+        const parts = [];
+        if (sales_result) parts.push("Sales: " + (sales_result.tax_rows.length) + " rows");
+        if (purchase_result) parts.push("Purchase: " + (purchase_result.tax_rows.length) + " rows");
+        this.$tax_preview_subtitle.text(parts.join(" | "));
+    }
+
+    build_tax_table(label, result) {
+        let h = `<div class="fe-tax-table-wrap">`;
+        h += `<div class="fe-tax-table-label">${label}</div>`;
+        h += `<table class="fe-tax-table">`;
+        h += `<thead><tr><th>Account</th><th>Rate</th><th style="text-align:right;">Amount</th></tr></thead><tbody>`;
+        if (result.tax_rows && result.tax_rows.length) {
+            result.tax_rows.forEach(row => {
+                h += `<tr>`;
+                h += `<td>${row.account_head || ""}</td>`;
+                h += `<td>${row.rate ? row.rate + "%" : (row.charge_type === "Actual" ? "Actual" : "")}</td>`;
+                h += `<td style="text-align:right;font-weight:600;">${this.fmt(row.amount)}</td>`;
+                h += `</tr>`;
+            });
+            h += `<tr class="fe-tax-total"><td><b>Total Tax</b></td><td></td><td style="text-align:right;"><b>${this.fmt(result.total_tax)}</b></td></tr>`;
+        } else {
+            h += `<tr><td colspan="3" style="text-align:center;color:#9ca3af;">No tax rows</td></tr>`;
+        }
+        h += `</tbody></table></div>`;
+        return h;
     }
 
     validate() {
@@ -447,13 +565,17 @@ fast_entry_app.ICTEntry = class ICTEntry {
             })) };
     }
 
-    save() {
+    save(on_success) {
         const errors = this.validate(); if (errors.length) { frappe.msgprint({title:"Validation Error", indicator:"red", message:errors.join("<br>")}); return; }
         const self = this, data = this.get_save_data();
         self.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Saving...</span>');
         frappe.call({ method: "fast_entry_app.api.ict.create_inter_company_transfer", args: { data: data }, freeze: true, freeze_message: __("Creating Inter Company Transfer..."),
-            callback: function(r) { if (r.message && r.message.name) { self.last_saved_name = r.message.name; frappe.show_alert({ message: __("Transfer {0} saved", [r.message.name]), indicator: "green" }); self.$status_bar.html('<span class="fe-status-ok"><i class="fa fa-check"></i> Saved: <a href="/app/inter-company-transfer/' + r.message.name + '" target="_blank">' + r.message.name + '</a></span>'); self.show_submit_dialog(r.message.name); } },
+            callback: function(r) { if (r.message && r.message.name) { self.last_saved_name = r.message.name; frappe.show_alert({ message: __("Transfer {0} saved", [r.message.name]), indicator: "green" }); self.$status_bar.html('<span class="fe-status-ok"><i class="fa fa-check"></i> Saved: <a href="/app/inter-company-transfer/' + r.message.name + '" target="_blank">' + r.message.name + '</a></span>'); if (on_success) on_success(r.message.name); else self.show_submit_dialog(r.message.name); } },
             error: function() { self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Save failed</span>'); } });
+    }
+
+    save_and_new() {
+        this.save(() => { this.clear_form(); });
     }
 
     show_submit_dialog(name) {
@@ -552,93 +674,63 @@ fast_entry_app.ICTEntry = class ICTEntry {
     render_payment_section(details, ict_name) {
         const self = this;
         if (!details) return;
-        let h = `<div class="fe-card"><div class="fe-card-header"><i class="fa fa-credit-card"></i> Manual Payment Entry</div>`;
+        const si_outstanding = this.flt(details.si_outstanding || 0);
+        const pi_outstanding = this.flt(details.pi_outstanding || 0);
+        const has_open = si_outstanding > 0 || pi_outstanding > 0;
+
+        let h = `<div class="fe-card"><div class="fe-card-header"><i class="fa fa-credit-card"></i> Payment Entry (Separate Step)</div>`;
         h += `<div class="fe-payment-grid">`;
 
         if (details.sales_invoice) {
-            const si_outstanding = this.flt(details.si_outstanding || 0);
             h += `<div class="fe-payment-card fe-payment-sell">`;
             h += `<div class="fe-payment-label">SELLING (Source Company)</div>`;
             h += `<div class="fe-payment-doc"><a href="/app/sales-invoice/${details.sales_invoice}" target="_blank">${details.sales_invoice}</a></div>`;
             h += `<div class="fe-payment-meta">Rs. ${this.fmt(details.si_grand_total)} | Outstanding: Rs. ${this.fmt(si_outstanding)}</div>`;
-            if (si_outstanding > 0) {
-                h += `<div class="fe-payment-form" id="fe-payment-si">`;
-                h += `<div class="fe-payment-row">`;
-                h += `<div class="fe-field"><label>Amount</label><input type="number" class="fe-input fe-input-sm" id="fe-si-pay-amount" value="${si_outstanding}" step="0.01" /></div>`;
-                h += `<div class="fe-field"><label>Mode</label><select class="fe-input fe-input-sm" id="fe-si-pay-mode"><option value="Bank Transfer">Bank Transfer</option><option value="NEFT">NEFT</option><option value="RTGS">RTGS</option><option value="UPI">UPI</option><option value="Cheque">Cheque</option><option value="Cash">Cash</option></select></div>`;
-                h += `</div>`;
-                h += `<div class="fe-payment-row">`;
-                h += `<div class="fe-field"><label>Date</label><input type="date" class="fe-input fe-input-sm" id="fe-si-pay-date" value="${frappe.datetime.get_today()}" /></div>`;
-                h += `<div class="fe-field"><label>Reference</label><input type="text" class="fe-input fe-input-sm" id="fe-si-pay-ref" placeholder="Ref No" /></div>`;
-                h += `</div>`;
-                h += `<button class="fe-btn fe-btn-sm fe-btn-pay-si" style="background:#ef4444;color:#fff;border-color:#ef4444;margin-top:6px;"><i class="fa fa-money"></i> Create Payment for SI</button>`;
-                h += `</div>`;
-            } else {
-                h += `<div class="fe-payment-paid"><i class="fa fa-check-circle"></i> Fully Paid</div>`;
-            }
+            if (si_outstanding <= 0) h += `<div class="fe-payment-paid"><i class="fa fa-check-circle"></i> Fully Paid</div>`;
             h += `</div>`;
         }
 
         if (details.purchase_invoice) {
-            const pi_outstanding = this.flt(details.pi_outstanding || 0);
             h += `<div class="fe-payment-card fe-payment-buy">`;
             h += `<div class="fe-payment-label">BUYING (Target Company)</div>`;
             h += `<div class="fe-payment-doc"><a href="/app/purchase-invoice/${details.purchase_invoice}" target="_blank">${details.purchase_invoice}</a></div>`;
             h += `<div class="fe-payment-meta">Rs. ${this.fmt(details.pi_grand_total)} | Outstanding: Rs. ${this.fmt(pi_outstanding)}</div>`;
-            if (pi_outstanding > 0) {
-                h += `<div class="fe-payment-form" id="fe-payment-pi">`;
-                h += `<div class="fe-payment-row">`;
-                h += `<div class="fe-field"><label>Amount</label><input type="number" class="fe-input fe-input-sm" id="fe-pi-pay-amount" value="${pi_outstanding}" step="0.01" /></div>`;
-                h += `<div class="fe-field"><label>Mode</label><select class="fe-input fe-input-sm" id="fe-pi-pay-mode"><option value="Bank Transfer">Bank Transfer</option><option value="NEFT">NEFT</option><option value="RTGS">RTGS</option><option value="UPI">UPI</option><option value="Cheque">Cheque</option><option value="Cash">Cash</option></select></div>`;
-                h += `</div>`;
-                h += `<div class="fe-payment-row">`;
-                h += `<div class="fe-field"><label>Date</label><input type="date" class="fe-input fe-input-sm" id="fe-pi-pay-date" value="${frappe.datetime.get_today()}" /></div>`;
-                h += `<div class="fe-field"><label>Reference</label><input type="text" class="fe-input fe-input-sm" id="fe-pi-pay-ref" placeholder="Ref No" /></div>`;
-                h += `</div>`;
-                h += `<button class="fe-btn fe-btn-sm fe-btn-pay-pi" style="background:#10b981;color:#fff;border-color:#10b981;margin-top:6px;"><i class="fa fa-money"></i> Create Payment for PI</button>`;
-                h += `</div>`;
-            } else {
-                h += `<div class="fe-payment-paid"><i class="fa fa-check-circle"></i> Fully Paid</div>`;
-            }
+            if (pi_outstanding <= 0) h += `<div class="fe-payment-paid"><i class="fa fa-check-circle"></i> Fully Paid</div>`;
+            h += `</div>`;
+        }
+
+        if (has_open) {
+            h += `<div class="fe-payment-actions" style="padding:10px 12px;display:flex;align-items:center;gap:10px;">`;
+            h += `<button class="fe-btn fe-btn-primary fe-btn-pay-bulk" style="padding:8px 14px;"><i class="fa fa-money"></i> Create Payment Entries</button>`;
+            h += `<span style="font-size:10px;color:#6b7280;">Creates Receive (SI) + Pay (PI) together</span>`;
             h += `</div>`;
         }
 
         h += `</div></div>`;
         this.$root.find("#fe-payment-section").html(h);
 
-        this.$root.find(".fe-btn-pay-si").on("click", function() {
-            self.create_payment_manual(ict_name, "Sales Invoice", details.sales_invoice,
-                self.$root.find("#fe-si-pay-amount").val(),
-                self.$root.find("#fe-si-pay-mode").val(),
-                self.$root.find("#fe-si-pay-date").val(),
-                self.$root.find("#fe-si-pay-ref").val());
-        });
-        this.$root.find(".fe-btn-pay-pi").on("click", function() {
-            self.create_payment_manual(ict_name, "Purchase Invoice", details.purchase_invoice,
-                self.$root.find("#fe-pi-pay-amount").val(),
-                self.$root.find("#fe-pi-pay-mode").val(),
-                self.$root.find("#fe-pi-pay-date").val(),
-                self.$root.find("#fe-pi-pay-ref").val());
+        this.$root.find(".fe-btn-pay-bulk").on("click", function() {
+            const $btn = $(this).prop("disabled", true);
+            $btn.html('<i class="fa fa-spinner fa-spin"></i> Creating...');
+            frappe.confirm(__("Create Payment Entries for {0}?", [ict_name]),
+                function() {
+                    frappe.call({ method: "fast_entry_app.api.ict.create_payment_entries_for_ict",
+                        args: { ict_name: ict_name },
+                        callback: function(r) {
+                            $btn.prop("disabled", false).html('<i class="fa fa-money"></i> Create Payment Entries');
+                            if (r.message && r.message.created && r.message.created.length) {
+                                frappe.show_alert({ message: __("Payment Entries created: {0}", [r.message.created.join(", ")]), indicator: "green" });
+                                self.load_ict_sections(ict_name);
+                            } else {
+                                frappe.show_alert({ message: __("No payment entries created (already settled)"), indicator: "orange" });
+                            }
+                        },
+                        error: function() { $btn.prop("disabled", false).html('<i class="fa fa-money"></i> Create Payment Entries'); }
+                    });
+                },
+                function() { $btn.prop("disabled", false).html('<i class="fa fa-money"></i> Create Payment Entries'); });
         });
     }
-
-    create_payment_manual(ict_name, doctype, docname, amount, mode, date, reference) {
-        if (!amount || parseFloat(amount) <= 0) { frappe.msgprint("Amount must be greater than 0"); return; }
-        frappe.confirm(__("Create {0} Payment for {1}?", [mode, docname]),
-            function() {
-                frappe.call({ method: "fast_entry_app.api.ict.create_payment_entry_manual",
-                    args: { name: ict_name, doctype: doctype, docname: docname, amount: amount, mode_of_payment: mode, posting_date: date, reference_no: reference },
-                    callback: function(r) {
-                        if (r.message && r.message.name) {
-                            frappe.show_alert({ message: __("Payment {0} created", [r.message.name]), indicator: "green" });
-                            frappe.open_in_new_tab("/app/payment-entry/" + r.message.name);
-                        }
-                    }
-                });
-            });
-    }
-
-    save_and_new() { this.save(); setTimeout(() => this.clear_form(), 1500); }
 
     clear_form() { this.items = []; this.$grid_body.empty(); this.$posting_date.val(frappe.datetime.get_today()); this.$remarks.val(""); this.add_empty_row(); this.update_totals(); this.$status_bar.html(""); this.$root.find("#fe-source-company").focus(); this.$root.find("#fe-ict-section").hide(); }
 };

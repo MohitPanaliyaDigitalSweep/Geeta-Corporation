@@ -1,0 +1,24 @@
+.party-group-list {
+    padding: 15px;
+}
+
+.badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.badge-warning {
+    background-color: #f0ad4e;
+    color: #fff;
+}
+
+.badge-info {
+    background-color: #5bc0de;
+    color: #fff;
+}
+
+.badge-success {
+    background-color: #5cb85c;
+    color: #fff;
+}

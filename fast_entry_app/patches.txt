@@ -4,3 +4,5 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+fast_entry_app.patches.v1_item_table_columns
+fast_entry_app.patches.migrate_fe_group

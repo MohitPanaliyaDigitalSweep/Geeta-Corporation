@@ -125,8 +125,8 @@ def get_item_stock(item_code, company, warehouse=None):
 
     Returns:
         current_stock: dict with actual_qty, reserved_qty, projected_qty for the specified warehouse
-        warehouse_stock: list of all warehouses where this item has stock
-        total_actual_qty: sum of actual_qty across all warehouses
+        warehouse_stock: list of warehouses of the company where this item has stock
+        total_actual_qty: sum of actual_qty across all warehouses of the company
     """
     if not item_code or not company:
         return {"current_stock": {}, "warehouse_stock": [], "total_actual_qty": 0}
@@ -152,10 +152,10 @@ def get_item_stock(item_code, company, warehouse=None):
                w.warehouse_name
         FROM `tabBin` b
         LEFT JOIN `tabWarehouse` w ON w.name = b.warehouse
-        WHERE b.item_code = %s AND b.actual_qty != 0
+        WHERE b.item_code = %s AND w.company = %s AND b.actual_qty != 0
         ORDER BY b.warehouse
         """,
-        (item_code,),
+        (item_code, company),
         as_dict=True,
     )
 
@@ -164,6 +164,38 @@ def get_item_stock(item_code, company, warehouse=None):
     return {
         "current_stock": current_stock,
         "warehouse_stock": warehouse_stock,
+        "total_actual_qty": total_actual_qty,
+    }
+
+
+@frappe.whitelist()
+def get_item_stock_all(item_code):
+    """Get stock for an item across ALL companies.
+
+    Returns:
+        company_stock: list of {company, warehouse, actual_qty, stock_value}
+        total_actual_qty: sum across all companies
+    """
+    if not item_code:
+        return {"company_stock": [], "total_actual_qty": 0}
+
+    warehouse_stock = frappe.db.sql(
+        """
+        SELECT b.warehouse, b.actual_qty, b.reserved_qty, b.projected_qty, b.stock_value,
+               w.warehouse_name, w.company
+        FROM `tabBin` b
+        LEFT JOIN `tabWarehouse` w ON w.name = b.warehouse
+        WHERE b.item_code = %s AND b.actual_qty != 0
+        ORDER BY w.company, b.warehouse
+        """,
+        (item_code,),
+        as_dict=True,
+    )
+
+    total_actual_qty = sum(flt(s.actual_qty) for s in warehouse_stock)
+
+    return {
+        "company_stock": warehouse_stock,
         "total_actual_qty": total_actual_qty,
     }
 
@@ -183,13 +215,10 @@ def get_item_uom(item_code):
 
     Returns:
         nos_factor: pieces per Box (from UOM Conversion Detail Nos row)
-        litre_factor: total Litre/Kg per Box
+        litre_factor: Litre/Kg per piece (from UOM Conversion Detail Litre/Kg row)
 
-    The Litre/Kg conversion_factor in UOM Conversion Detail can mean:
-    - Per piece (for multi-piece items like 4x3.5L): multiply by nos_factor
-    - Total per box (for single-piece items like 210L drum): use directly
-
-    We detect by checking the item name for patterns like "NxM" or "NxM.L".
+    LTR is fetched directly from the item conversion table.
+    Total Litre = pcs x litre_factor.
     """
     uoms = frappe.get_all(
         "UOM Conversion Detail",
@@ -197,27 +226,19 @@ def get_item_uom(item_code):
         fields=["uom", "conversion_factor"],
     )
     nos_factor = 1
-    kg_per_piece = 1
+    litre_factor = 0
     for u in uoms:
         if u.uom == "Nos":
             nos_factor = u.conversion_factor or 1
         elif u.uom in ("Litre", "Kg"):
-            kg_per_piece = u.conversion_factor or 1
+            litre_factor = u.conversion_factor or 0
 
-    # Detect if item name indicates multiple pieces (e.g. "4x3.5L", "10X1 KG", "60X200 GM")
     item = frappe.get_doc("Item", item_code)
-    name = (item.item_name or item_code).upper()
-    import re
-    multi_piece = bool(re.search(r'(\d+)\s*[xX×]\s*\d+', name))
-
-    if multi_piece and nos_factor > 1:
-        # Litre/Kg factor is per piece, total = nos * kg_per_piece
-        litre_factor = nos_factor * kg_per_piece
-    else:
-        # Litre/Kg factor is already total per box
-        litre_factor = kg_per_piece
-
-    return {"nos_factor": nos_factor, "litre_factor": litre_factor}
+    return {
+        "nos_factor": nos_factor,
+        "litre_factor": litre_factor,
+        "stock_uom": item.stock_uom,
+    }
 
 
 @frappe.whitelist()

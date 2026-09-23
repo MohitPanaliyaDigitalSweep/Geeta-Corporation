@@ -48,6 +48,9 @@ def create_purchase_invoice(data):
     # Set warehouse at header level if provided
     if data.get("warehouse"):
         pi.set_warehouse = data.get("warehouse")
+
+    # Create stock impact (purchase receipt + stock entry) on submit when enabled
+    if data.get("update_stock"):
         pi.update_stock = 1
 
     # Append items
@@ -64,12 +67,40 @@ def create_purchase_invoice(data):
         if qty <= 0 or rate <= 0:
             continue
 
+        # Item master fallbacks (UOM conversions + custom fields)
+        item_master = {}
+        if frappe.db.has_column("Item", "custom_box"):
+            item_master = frappe.db.get_value(
+                "Item", item_code, ["custom_box", "custom_pcs", "custom_ltr", "custom_mrp"], as_dict=True
+            ) or {}
+        uoms = frappe.get_all(
+            "UOM Conversion Detail",
+            filters={"parent": item_code, "uom": ["in", ["Nos", "Litre", "Kg"]]},
+            fields=["uom", "conversion_factor"],
+        )
+        nos_factor = 1
+        litre_factor = 0
+        for u in uoms:
+            if u.uom == "Nos":
+                nos_factor = flt(u.conversion_factor) or 1
+            elif u.uom in ("Litre", "Kg"):
+                litre_factor = flt(u.conversion_factor) or 0
+        nos_factor = flt(item_data.get("nos_factor")) or nos_factor
+        litre_factor = flt(item_data.get("litre_factor")) or litre_factor
+
+        if not box:
+            box = flt(item_master.get("custom_box")) or flt(pcs / nos_factor)
+        if not pcs and box:
+            pcs = flt(box * nos_factor)
+        if not ltr:
+            ltr = flt(item_master.get("custom_ltr")) or litre_factor
+        total_ltr = flt(item_data.get("total_ltr")) or flt(pcs * ltr)
+
         hsn_code = ""
         if frappe.db.has_column("Item", "gst_hsn_code"):
             hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
         conversion_factor = flt(item_data.get("conversion_factor")) or 1.0
         amount = flt(pcs * rate)
-        total_ltr = flt(item_data.get("total_ltr")) or 0
 
         item_row = pi.append("items", {
             "item_code": item_code,
@@ -84,6 +115,10 @@ def create_purchase_invoice(data):
             "fe_pcs": pcs,
             "fe_ltr": ltr,
             "fe_total_ltr": total_ltr,
+            "custom_box": box,
+            "custom_pcs": pcs,
+            "custom_ltr": total_ltr,
+            "custom_mrp": flt(item_master.get("custom_mrp")) or flt(item_data.get("mrp")),
         })
         if frappe.db.has_column("Purchase Invoice Item", "gst_hsn_code"):
             item_row.gst_hsn_code = hsn_code
@@ -94,22 +129,9 @@ def create_purchase_invoice(data):
         pi.additional_discount_percentage = 0
         pi.discount_amount = discount
 
-    # Apply freight as additional row
-    freight = flt(data.get("freight")) or 0
-    if freight > 0:
-        pi.append("taxes", {
-            "charge_type": "Actual",
-            "account_head": company_doc.default_expense_account or "",
-            "description": "Freight / Transport",
-            "rate": 0,
-            "amount": freight,
-            "cost_center": company_doc.cost_center or "",
-        })
-
     # Apply tax template
     tax_override = flt(data.get("tax_override")) or 0
     if tax_override > 0:
-        # User selected a GST override rate - build manual tax rows
         _apply_manual_taxes(pi, company, tax_override, data.get("gst_type", "intra"), company_doc)
     else:
         tax_template = _get_tax_template(company, data.get("gst_type"))
@@ -118,7 +140,6 @@ def create_purchase_invoice(data):
             tmpl = frappe.get_doc("Purchase Taxes and Charges Template", tax_template)
             pi.taxes = []
             for row in tmpl.taxes:
-                # Skip reverse charge rows and rows without valid account
                 if not row.account_head:
                     continue
                 if "reverse" in (row.description or "").lower():
@@ -129,6 +150,49 @@ def create_purchase_invoice(data):
                     "description": row.description,
                     "rate": row.rate,
                     "cost_center": row.cost_center or company_doc.cost_center or "",
+                })
+
+    # Apply freight AFTER tax template (so it doesn't get cleared)
+    freight = flt(data.get("freight")) or 0
+    if freight > 0:
+        expense_account = company_doc.default_expense_account or ""
+        cost_center = company_doc.cost_center or ""
+        pi.append("taxes", {
+            "charge_type": "Actual",
+            "account_head": expense_account,
+            "description": "Freight / Transport",
+            "rate": 0,
+            "amount": freight,
+            "cost_center": cost_center,
+        })
+        gst_type = data.get("gst_type", "intra")
+        cgst_account = _get_pi_tax_account(company, "cgst")
+        sgst_account = _get_pi_tax_account(company, "sgst")
+        igst_account = _get_pi_tax_account(company, "igst")
+        if gst_type == "inter" and igst_account:
+            pi.append("taxes", {
+                "charge_type": "On Net Total",
+                "account_head": igst_account,
+                "description": "Freight IGST @ 18%",
+                "rate": 18,
+                "cost_center": cost_center,
+            })
+        else:
+            if cgst_account:
+                pi.append("taxes", {
+                    "charge_type": "On Net Total",
+                    "account_head": cgst_account,
+                    "description": "Freight CGST @ 9%",
+                    "rate": 9,
+                    "cost_center": cost_center,
+                })
+            if sgst_account:
+                pi.append("taxes", {
+                    "charge_type": "On Net Total",
+                    "account_head": sgst_account,
+                    "description": "Freight SGST @ 9%",
+                    "rate": 9,
+                    "cost_center": cost_center,
                 })
 
     # Set missing values (auto-fills accounts, etc.)
@@ -165,6 +229,9 @@ def validate_purchase_invoice(data):
         errors.append("Bill No is required")
     if not data.get("bill_date"):
         errors.append("Bill Date is required")
+
+    if data.get("update_stock") and not data.get("warehouse"):
+        errors.append("Warehouse is required for stock impact")
 
     items = data.get("items", [])
     valid_items = [i for i in items if i.get("item_code") and flt(i.get("pcs", 0)) > 0]
@@ -217,6 +284,20 @@ def get_last_invoices(supplier, limit=5):
     return invoices
 
 
+def _get_pi_tax_account(company, tax_type):
+    """Get Input CGST/SGST/IGST account for a company."""
+    maps = {
+        "cgst": "Input Tax CGST",
+        "sgst": "Input Tax SGST",
+        "igst": "Input Tax IGST",
+    }
+    prefix = maps.get(tax_type, "")
+    if not prefix:
+        return ""
+    account = frappe.db.get_value("Account", {"company": company, "account_name": ["like", f"%{prefix}%"]}, "name")
+    return account or ""
+
+
 def _get_tax_template(company, gst_type="intra"):
     """Get the appropriate tax template for the company and GST type (exclude RCM)."""
     keyword = "In-state" if gst_type == "intra" else "Out-state"
@@ -254,7 +335,11 @@ def _apply_manual_taxes(pi, company, tax_rate, gst_type, company_doc):
     if gst_type == "inter":
         account = frappe.db.get_value(
             "Account",
-            {"company": company, "account_name": ["like", "%Input Tax IGST%"], "account_name": ["not like", "%RCM%"]},
+            [
+                ["company", "=", company],
+                ["account_name", "like", "%Input Tax IGST%"],
+                ["account_name", "not like", "%RCM%"],
+            ],
             "name",
         )
         if not account:
@@ -269,12 +354,20 @@ def _apply_manual_taxes(pi, company, tax_rate, gst_type, company_doc):
     else:
         cgst_account = frappe.db.get_value(
             "Account",
-            {"company": company, "account_name": ["like", "%Input Tax CGST%"], "account_name": ["not like", "%RCM%"]},
+            [
+                ["company", "=", company],
+                ["account_name", "like", "%Input Tax CGST%"],
+                ["account_name", "not like", "%RCM%"],
+            ],
             "name",
         )
         sgst_account = frappe.db.get_value(
             "Account",
-            {"company": company, "account_name": ["like", "%Input Tax SGST%"], "account_name": ["not like", "%RCM%"]},
+            [
+                ["company", "=", company],
+                ["account_name", "like", "%Input Tax SGST%"],
+                ["account_name", "not like", "%RCM%"],
+            ],
             "name",
         )
         if not cgst_account or not sgst_account:

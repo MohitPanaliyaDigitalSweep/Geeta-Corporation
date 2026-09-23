@@ -1,0 +1,129 @@
+/* Fast Entry App - Fast Purchase Payment Styles */
+
+.fpp-pay-input {
+    width: 130px;
+    text-align: right;
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    -moz-appearance: textfield;
+}
+.fpp-pay-input::-webkit-inner-spin-button,
+.fpp-pay-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.fpp-pay-input:focus {
+    border-color: #059669;
+    box-shadow: 0 0 0 2px rgba(5,150,105,0.15);
+    outline: none;
+}
+
+.fpp-tick {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #059669;
+}
+
+.fpp-checked {
+    background: #f0fdf4 !important;
+}
+
+.fpp-selected-total {
+    font-weight: 800;
+    color: #059669;
+    font-size: 16px;
+}
+
+.fpp-status-cell {
+    text-align: center;
+    white-space: nowrap;
+}
+
+#fpp-pending-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+
+#fpp-pending-table thead th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 12px;
+    border-bottom: 2px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+#fpp-pending-table tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+    color: #334155;
+}
+
+#fpp-pending-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+#fpp-pending-table tbody tr.fpp-checked {
+    background: #f0fdf4 !important;
+    border-left: 3px solid #059669;
+}
+
+#fpp-pending-table tbody tr.fpp-checked td:first-child {
+    padding-left: 9px;
+}
+
+#fpp-pending-table tfoot td {
+    background: #f8fafc;
+    font-weight: 700;
+    border-top: 2px solid #e2e8f0;
+    padding: 10px 12px;
+    color: #1e293b;
+}
+
+#fpp-pending-table a {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+#fpp-pending-table a:hover {
+    text-decoration: underline;
+}
+
+.fpp-amount-cell {
+    font-weight: 700;
+    color: #dc2626;
+}
+
+.fpp-gt-cell {
+    color: #64748b;
+}
+
+#fpp-pending-wrap {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#fpp-amount,
+#fpp-amount::-webkit-inner-spin-button,
+#fpp-amount::-webkit-outer-spin-button {
+    -moz-appearance: textfield;
+    -webkit-appearance: none;
+    margin: 0;
+}

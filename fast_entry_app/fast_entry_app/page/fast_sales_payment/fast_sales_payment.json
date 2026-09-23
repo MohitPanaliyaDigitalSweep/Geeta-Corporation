@@ -1,0 +1,30 @@
+{
+ "content": null,
+ "creation": "2026-08-20 17:23:38.459585",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "octicon octicon-file-directory",
+ "idx": 0,
+ "modified": "2026-08-20 17:23:38.459585",
+ "modified_by": "Administrator",
+ "module": "Fast Entry App",
+ "name": "fast-sales-payment",
+ "owner": "Administrator",
+ "page_name": "fast-sales-payment",
+ "roles": [
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "System Manager"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Fast Sales Payment"
+}
