@@ -5,6 +5,12 @@ app_description = "Fast Purchase and Sales Entry for ERPNext"
 app_email = "developers@fastentry.local"
 app_license = "gpl-3.0"
 
+# ERPNext is a hard dependency: Inter Company Transfer imports
+# erpnext.controllers.stock_controller, and every custom field we ship targets
+# an ERPNext doctype. In Frappe v16 this hook also auto-installs ERPNext before
+# this app's fixtures/patches run, and blocks uninstalling it while we are here.
+required_apps = ["erpnext"]
+
 # Apps
 add_to_apps_screen = [
     {
@@ -65,8 +71,16 @@ fixtures = [
                     "Custom Sales Invoice",
                     "Custom Purchase Invoice",
                     "Custom Quotation",
+                    "Test Print Format",
                 ],
             ]
         ],
     },
 ]
+
+# Patches are marked completed (not executed) by `install-app`, and a site that
+# installed us before ERPNext will never run the v2 patch either, because it was
+# already recorded as done. These two hooks make the schema converge instead:
+# once at install time, then on every migrate.
+after_install = "fast_entry_app.install.after_install"
+after_migrate = "fast_entry_app.install.after_install"

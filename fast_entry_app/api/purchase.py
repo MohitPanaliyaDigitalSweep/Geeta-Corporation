@@ -67,11 +67,13 @@ def create_purchase_invoice(data):
         if qty <= 0 or rate <= 0:
             continue
 
-        # Item master fallbacks (UOM conversions + custom fields)
+        # Item master fallbacks (UOM conversions + optional legacy pack fields).
+        # The custom_* columns are hand-added on some sites only, so they are
+        # read defensively; the invoice itself always stores fe_*.
         item_master = {}
         if frappe.db.has_column("Item", "custom_box"):
             item_master = frappe.db.get_value(
-                "Item", item_code, ["custom_box", "custom_pcs", "custom_ltr", "custom_mrp"], as_dict=True
+                "Item", item_code, ["custom_box", "custom_ltr"], as_dict=True
             ) or {}
         uoms = frappe.get_all(
             "UOM Conversion Detail",
@@ -115,10 +117,6 @@ def create_purchase_invoice(data):
             "fe_pcs": pcs,
             "fe_ltr": ltr,
             "fe_total_ltr": total_ltr,
-            "custom_box": box,
-            "custom_pcs": pcs,
-            "custom_ltr": total_ltr,
-            "custom_mrp": flt(item_master.get("custom_mrp")) or flt(item_data.get("mrp")),
         })
         if frappe.db.has_column("Purchase Invoice Item", "gst_hsn_code"):
             item_row.gst_hsn_code = hsn_code

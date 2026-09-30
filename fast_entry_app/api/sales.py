@@ -1,7 +1,85 @@
+import hashlib
 import json
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
+
+# Reject duplicate submissions within this window (seconds). Prevents
+# repeated Save clicks from creating multiple identical invoices.
+FAST_ENTRY_DEDUP_WINDOW = 120
+
+
+@frappe.whitelist()
+def fast_entry_context():
+    """Companies + default sales person for the logged-in user (HRMS PWA)."""
+    companies = frappe.get_all(
+        "Company", fields=["name"], limit_page_length=100, order_by="name asc"
+    )
+    company_list = []
+    for c in companies or []:
+        name = c.get("name")
+        company_list.append(
+            {
+                "name": name,
+                "tax_rate": _company_tax_rate(name),
+            }
+        )
+    return {
+        "companies": [c.get("name") for c in companies or []],
+        "company_tax_rates": {c["name"]: c["tax_rate"] for c in company_list},
+        "default_sales_person": _default_sales_person(),
+    }
+
+
+def _company_tax_rate(company, gst_type="intra"):
+    """Half-of-total GST rate from the company's default Sales Tax Template (CGST+SGST halved)."""
+    try:
+        import india_compliance  # noqa: F401
+    except ImportError:
+        pass
+    template = _get_sales_tax_template(company, gst_type)
+    if not template:
+        return 0.0
+    doc = frappe.get_cached_doc("Sales Taxes and Charges Template", template)
+    rate = 0.0
+    for row in doc.get("taxes") or []:
+        if row.get("rate"):
+            rate += flt(row.rate)
+    return rate
+
+
+def _default_sales_person():
+    """Best-effort default Sales Person for the logged-in user.
+
+    Resolution order:
+    1. A Sales Person whose name matches the session user's name/full_name.
+    2. The first enabled, non-group Sales Person (alphabetical).
+    """
+    user = frappe.session.user
+    candidates = frappe.get_all(
+        "Sales Person",
+        filters={"is_group": 0, "enabled": 1},
+        fields=["name", "sales_person_name"],
+        order_by="sales_person_name asc",
+    )
+    if not candidates:
+        return ""
+
+    full_name = ""
+    if user:
+        full_name = frappe.db.get_value("User", user, "full_name") or ""
+
+    user_l = user.lower()
+    full_l = (full_name or "").lower()
+    for c in candidates:
+        hay = ((c.sales_person_name or "") or c.name).lower()
+        if user_l and user_l in hay:
+            return c.sales_person_name or c.name
+        if full_l and full_l in hay:
+            return c.sales_person_name or c.name
+
+    first = candidates[0]
+    return first.sales_person_name or first.name
 
 
 @frappe.whitelist()
@@ -14,8 +92,22 @@ def create_sales_invoice(data):
     if errors:
         frappe.throw("<br>".join(errors))
 
+    dedup_key = _invoice_dedup_key(data)
+    duplicate = _find_duplicate_invoice(dedup_key)
+    if duplicate:
+        return {
+            "name": duplicate.get("name"),
+            "status": "Draft" if duplicate.get("docstatus") == 0 else "Submitted",
+            "grand_total": duplicate.get("grand_total"),
+            "outstanding_amount": duplicate.get("outstanding_amount"),
+            "duplicate": True,
+        }
+
     company = data.get("company")
     customer = data.get("customer")
+    draft = 1 if data.get("draft") else 0
+    auto_einvoice = 1 if data.get("auto_einvoice") else 0
+    auto_ewaybill = 1 if data.get("auto_ewaybill") else 0
     items = data.get("items", [])
 
     company_doc = frappe.get_cached_doc("Company", company)
@@ -56,6 +148,10 @@ def create_sales_invoice(data):
             si.driver = delivery_person
     if delivery_vehicle:
         si.vehicle_no = delivery_vehicle
+    if data.get("distance") or data.get("distance") == 0:
+        distance = flt(data.get("distance"))
+        if distance > 0 and frappe.db.has_column("Sales Invoice", "distance"):
+            si.distance = distance
     if sales_person:
         si.fe_sales_person = sales_person
         if frappe.db.exists("Sales Person", sales_person):
@@ -77,12 +173,42 @@ def create_sales_invoice(data):
         if qty <= 0 or rate <= 0:
             continue
 
+        # Item master fallbacks (UOM conversions + optional legacy pack fields).
+        # The custom_* columns are hand-added on some sites only, so they are
+        # read defensively; the invoice itself always stores fe_*.
+        item_master = {}
+        if frappe.db.has_column("Item", "custom_box"):
+            item_master = frappe.db.get_value(
+                "Item", item_code, ["custom_box", "custom_ltr"], as_dict=True
+            ) or {}
+        uoms = frappe.get_all(
+            "UOM Conversion Detail",
+            filters={"parent": item_code, "uom": ["in", ["Nos", "Litre", "Kg"]]},
+            fields=["uom", "conversion_factor"],
+        )
+        nos_factor = 1
+        litre_factor = 0
+        for u in uoms:
+            if u.uom == "Nos":
+                nos_factor = flt(u.conversion_factor) or 1
+            elif u.uom in ("Litre", "Kg"):
+                litre_factor = flt(u.conversion_factor) or 0
+        nos_factor = flt(item_data.get("nos_factor")) or nos_factor
+        litre_factor = flt(item_data.get("litre_factor")) or litre_factor
+
+        if not box:
+            box = flt(item_master.get("custom_box")) or flt(pcs / nos_factor)
+        if not pcs and box:
+            pcs = flt(box * nos_factor)
+        if not ltr:
+            ltr = flt(item_master.get("custom_ltr")) or litre_factor
+        total_ltr = flt(item_data.get("total_ltr")) or flt(pcs * ltr)
+
         hsn_code = ""
         if frappe.db.has_column("Item", "gst_hsn_code"):
             hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
         conversion_factor = flt(item_data.get("conversion_factor")) or 1.0
         amount = flt(pcs * rate)
-        total_ltr = flt(item_data.get("total_ltr")) or 0
 
         item_row = si.append("items", {
             "item_code": item_code,
@@ -175,8 +301,57 @@ def create_sales_invoice(data):
     si.run_method("set_missing_values")
     si.run_method("calculate_taxes_and_totals")
 
+    if dedup_key:
+        si.fe_dedup_key = dedup_key
+
     si.insert(ignore_permissions=True)
+
+    if draft:
+        frappe.db.commit()
+        return {
+            "name": si.name,
+            "status": "Draft",
+            "docstatus": 0,
+            "grand_total": si.grand_total,
+            "outstanding_amount": si.outstanding_amount,
+        }
+
     si.submit()
+
+    if auto_einvoice or auto_ewaybill:
+        frappe.db.commit()
+
+    if auto_einvoice:
+        try:
+            from india_compliance.exceptions import AlreadyGeneratedError
+            from india_compliance.gst_india.utils.e_invoice import generate_e_invoice
+
+            generate_e_invoice(si.name)
+        except ImportError:
+            frappe.log_error(f"india_compliance not installed — cannot generate e-Invoice for {si.name}")
+        except AlreadyGeneratedError:
+            pass
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Fast Entry: e-Invoice generation failed for {si.name}",
+            )
+
+    if auto_ewaybill:
+        try:
+            from india_compliance.exceptions import AlreadyGeneratedError
+            from india_compliance.gst_india.utils.e_waybill import generate_e_waybill
+
+            generate_e_waybill(doctype="Sales Invoice", docname=si.name)
+        except ImportError:
+            frappe.log_error(f"india_compliance not installed — cannot generate e-Waybill for {si.name}")
+        except AlreadyGeneratedError:
+            pass
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Fast Entry: e-Waybill generation failed for {si.name}",
+            )
 
     return {
         "name": si.name,
@@ -412,3 +587,70 @@ def search_sales_persons(search=None, limit=10):
         }
         for r in rows
     ]
+
+
+def _invoice_dedup_key(data):
+    """Stable fingerprint of an invoice payload used to de-duplicate save clicks.
+
+    Built from the business-critical fields only (not UI flags like draft/
+    auto_einvoice). Items are sorted by item_code so row order is ignored.
+    """
+    items = []
+    for it in data.get("items") or []:
+        item_code = str(it.get("item_code") or "").strip()
+        if not item_code:
+            continue
+        items.append(
+            {
+                "item_code": item_code,
+                "box": flt(it.get("box")),
+                "pcs": flt(it.get("pcs")),
+                "ltr": flt(it.get("ltr")),
+                "rate": flt(it.get("rate")),
+            }
+        )
+    if not items:
+        return ""
+
+    items.sort(key=lambda i: i["item_code"])
+
+    canonical = {
+        "company": (data.get("company") or "").strip(),
+        "customer": (data.get("customer") or "").strip(),
+        "posting_date": str(getdate(data.get("posting_date") or data.get("invoice_date") or nowdate())),
+        "gst_type": (data.get("gst_type") or "").lower(),
+        "tax_override": flt(data.get("tax_override")),
+        "warehouse": (data.get("warehouse") or "").strip(),
+        "update_stock": 1 if data.get("update_stock") else 0,
+        "discount": flt(data.get("discount")),
+        "freight": flt(data.get("freight")),
+        "distance": flt(data.get("distance")),
+        "delivery_person": (data.get("delivery_person") or "").strip(),
+        "delivery_vehicle": (data.get("delivery_vehicle") or "").strip(),
+        "sales_person": (data.get("sales_person") or "").strip(),
+        "items": items,
+    }
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _find_duplicate_invoice(dedup_key):
+    """Return a recently-created invoice with the same dedup key, if any."""
+    if not dedup_key or not frappe.db.has_column("Sales Invoice", "fe_dedup_key"):
+        return None
+
+    cutoff = frappe.utils.add_to_date(
+        frappe.utils.now_datetime(), seconds=-FAST_ENTRY_DEDUP_WINDOW
+    )
+    rows = frappe.db.get_all(
+        "Sales Invoice",
+        filters={
+            "fe_dedup_key": dedup_key,
+            "docstatus": ["in", [0, 1]],
+            "creation": [">=", cutoff],
+        },
+        fields=["name", "docstatus", "grand_total", "outstanding_amount"],
+        order_by="creation desc",
+        limit_page_length=1,
+    )
+    return rows[0] if rows else None

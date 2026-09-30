@@ -109,6 +109,8 @@ fast_entry_app.SalesEntry = class SalesEntry {
                         </div>
                     </div>
                     <div class="fe-field"><label class="fe-checkbox-label"><input type="checkbox" class="fe-input" id="fe-stock-impact" checked /> Stock Impact</label></div>
+                    <div class="fe-field"><label class="fe-checkbox-label"><input type="checkbox" class="fe-input" id="fe-auto-einvoice" /> Auto E-Invoice</label></div>
+                    <div class="fe-field"><label class="fe-checkbox-label"><input type="checkbox" class="fe-input" id="fe-auto-ewaybill" /> Auto E-Waybill</label></div>
                 </div>
                 <div class="fe-header-row">
                     <div class="fe-field"><label>Delivery Person</label>
@@ -116,6 +118,9 @@ fast_entry_app.SalesEntry = class SalesEntry {
                     </div>
                     <div class="fe-field"><label>Delivery Vehicle</label>
                         <select class="fe-input" id="fe-delivery-vehicle"><option value="">Select Vehicle</option></select>
+                    </div>
+                    <div class="fe-field"><label>Distance (km)</label>
+                        <input type="number" class="fe-input" id="fe-distance" placeholder="E.g. 150" min="0" />
                     </div>
                     <div class="fe-field"><label>Sales Person</label>
                         <select class="fe-input" id="fe-sales-person"><option value="">Select Sales Person</option></select>
@@ -204,8 +209,11 @@ fast_entry_app.SalesEntry = class SalesEntry {
         this.$tax_template = this.$root.find("#fe-tax-template");
         this.$warehouse = this.$root.find("#fe-warehouse");
         this.$stock_impact = this.$root.find("#fe-stock-impact");
+        this.$auto_einvoice = this.$root.find("#fe-auto-einvoice");
+        this.$auto_ewaybill = this.$root.find("#fe-auto-ewaybill");
         this.$delivery_person = this.$root.find("#fe-delivery-person");
         this.$delivery_vehicle = this.$root.find("#fe-delivery-vehicle");
+        this.$distance = this.$root.find("#fe-distance");
         this.$sales_person = this.$root.find("#fe-sales-person");
         this.$discount = this.$root.find("#fe-discount");
         this.$discount_pct = this.$root.find("#fe-discount-pct");
@@ -415,12 +423,20 @@ fast_entry_app.SalesEntry = class SalesEntry {
                     const uoms = (search_uoms && search_uoms.length) ? search_uoms : (d.uoms || []);
                     row.nos_factor = 1;
                     row.litre_factor = 1;
+                    let has_box = false;
                     if (uoms.length) {
+                        const box_uom = uoms.find(u => u.uom === "Box");
                         const nos_uom = uoms.find(u => u.uom === "Nos");
                         const litre_uom = uoms.find(u => u.uom === "Litre" || u.uom === "Kg");
+                        has_box = !!box_uom;
                         if (nos_uom) row.nos_factor = nos_uom.conversion_factor || 1;
                         if (litre_uom) row.litre_factor = litre_uom.conversion_factor || 0;
                     }
+                    if (!has_box && d.stock_uom === "Nos" && row.nos_factor === 1) {
+                        has_box = true;
+                    }
+                    row.box = has_box ? 1 : 0;
+                    row.pcs = has_box ? self.flt(row.box * row.nos_factor) : 1;
                     row.ltr = row.litre_factor;
                     if (!row.warehouse && warehouse) row.warehouse = warehouse;
                     else if (d.warehouse) row.warehouse = d.warehouse;
@@ -797,8 +813,11 @@ fast_entry_app.SalesEntry = class SalesEntry {
             tax_override: parseFloat(this.$tax_template.val()) || 0,
             warehouse: this.$warehouse.val(),
             update_stock: this.$stock_impact.prop("checked") ? 1 : 0,
+            auto_einvoice: this.$auto_einvoice.prop("checked") ? 1 : 0,
+            auto_ewaybill: this.$auto_ewaybill.prop("checked") ? 1 : 0,
             delivery_person: this.$delivery_person.val(),
             delivery_vehicle: this.$delivery_vehicle.val(),
+            distance: parseFloat(this.$distance.val()) || 0,
             sales_person: this.$sales_person.val(),
             discount: this.flt(this.$discount.val()),
             discount_pct: this.flt(this.$discount_pct.val()),
@@ -816,9 +835,11 @@ fast_entry_app.SalesEntry = class SalesEntry {
     }
 
     save(on_success) {
+        if (this._saving) return;
         const errors = this.validate();
         if (errors.length) { frappe.msgprint({title:"Validation Error", indicator:"red", message:errors.join("<br>")}); return; }
         const self = this;
+        this._saving = true;
         const data = this.get_save_data();
         self.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Saving...</span>');
         frappe.call({
@@ -827,6 +848,7 @@ fast_entry_app.SalesEntry = class SalesEntry {
             freeze: true,
             freeze_message: __("Creating Sales Invoice..."),
             callback: function(r) {
+                self._saving = false;
                 if (r.message && r.message.name) {
                     self.last_saved_name = r.message.name;
                     frappe.show_alert({ message: __("Invoice {0} saved", [r.message.name]), indicator: "green" });
@@ -835,6 +857,7 @@ fast_entry_app.SalesEntry = class SalesEntry {
                 }
             },
             error: function() {
+                self._saving = false;
                 self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Save failed</span>');
             },
         });
@@ -854,8 +877,11 @@ fast_entry_app.SalesEntry = class SalesEntry {
         this.$freight.val(0);
         this.$tax_template.val("");
         this.$stock_impact.prop("checked", true);
+        this.$auto_einvoice.prop("checked", false);
+        this.$auto_ewaybill.prop("checked", false);
         this.$delivery_person.val("");
         this.$delivery_vehicle.val("");
+        this.$distance.val("");
         this.$sales_person.val("");
         if (!keep_customer) { this.$customer.val(""); this.$customer_balance.text(""); this.customer_details = {}; }
         this.add_empty_row();

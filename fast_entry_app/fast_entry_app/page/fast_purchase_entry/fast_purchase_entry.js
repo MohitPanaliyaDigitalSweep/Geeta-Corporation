@@ -400,12 +400,20 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                     const uoms = (search_uoms && search_uoms.length) ? search_uoms : (d.uoms || []);
                     row.nos_factor = 1;
                     row.litre_factor = 1;
+                    let has_box = false;
                     if (uoms.length) {
+                        const box_uom = uoms.find(u => u.uom === "Box");
                         const nos_uom = uoms.find(u => u.uom === "Nos");
                         const litre_uom = uoms.find(u => u.uom === "Litre" || u.uom === "Kg");
+                        has_box = !!box_uom;
                         if (nos_uom) row.nos_factor = nos_uom.conversion_factor || 1;
                         if (litre_uom) row.litre_factor = litre_uom.conversion_factor || 0;
                     }
+                    if (!has_box && d.stock_uom === "Nos" && row.nos_factor === 1) {
+                        has_box = true;
+                    }
+                    row.box = has_box ? 1 : 0;
+                    row.pcs = has_box ? self.flt(row.box * row.nos_factor) : 1;
                     row.ltr = row.litre_factor;
                     if (!row.warehouse && warehouse) row.warehouse = warehouse;
                     else if (d.warehouse) row.warehouse = d.warehouse;

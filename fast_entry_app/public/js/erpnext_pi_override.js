@@ -134,12 +134,14 @@ function _si_whatsapp(invoice_name, number) {
         args: args,
         callback: function(r) {
             if (r.message && r.message.ok) {
-                frappe.show_alert({message: __("PDF downloading for {0}", [r.message.name]), indicator: "green"});
-                if (r.message.pdf_url) _download_pdf(r.message.pdf_url);
-                if (r.message.wa_url) window.open(r.message.wa_url, "_blank");
+                frappe.show_alert({message: __("WhatsApp sent to {0} (msg {1})", [r.message.chat_id, r.message.message_id || "sent"]), indicator: "green"});
             } else if (r.message && r.message.missing_field) {
                 r.message.invoice_name = invoice_name;
                 _prompt_send_missing_field(r.message, "whatsapp", "Sales Invoice");
+            } else if (r.message && r.message.not_configured) {
+                frappe.show_alert({message: r.message.message, indicator: "orange"});
+            } else if (r.message) {
+                frappe.show_alert({message: r.message.message || __("WhatsApp send failed"), indicator: "red"});
             }
         }
     });
@@ -172,12 +174,14 @@ function _pi_whatsapp(invoice_name, number) {
         args: args,
         callback: function(r) {
             if (r.message && r.message.ok) {
-                frappe.show_alert({message: __("PDF downloading for {0}", [r.message.name]), indicator: "green"});
-                if (r.message.pdf_url) _download_pdf(r.message.pdf_url);
-                if (r.message.wa_url) window.open(r.message.wa_url, "_blank");
+                frappe.show_alert({message: __("WhatsApp sent to {0} (msg {1})", [r.message.chat_id, r.message.message_id || "sent"]), indicator: "green"});
             } else if (r.message && r.message.missing_field) {
                 r.message.invoice_name = invoice_name;
                 _prompt_send_missing_field(r.message, "whatsapp", "Purchase Invoice");
+            } else if (r.message && r.message.not_configured) {
+                frappe.show_alert({message: r.message.message, indicator: "orange"});
+            } else if (r.message) {
+                frappe.show_alert({message: r.message.message || __("WhatsApp send failed"), indicator: "red"});
             }
         }
     });
@@ -210,12 +214,14 @@ function _qtn_whatsapp(quotation_name, number) {
         args: args,
         callback: function(r) {
             if (r.message && r.message.ok) {
-                frappe.show_alert({message: __("PDF downloading for {0}", [r.message.name]), indicator: "green"});
-                if (r.message.pdf_url) _download_pdf(r.message.pdf_url);
-                if (r.message.wa_url) window.open(r.message.wa_url, "_blank");
+                frappe.show_alert({message: __("WhatsApp sent to {0} (msg {1})", [r.message.chat_id, r.message.message_id || "sent"]), indicator: "green"});
             } else if (r.message && r.message.missing_field) {
                 r.message.invoice_name = quotation_name;
                 _prompt_send_missing_field(r.message, "whatsapp", "Quotation");
+            } else if (r.message && r.message.not_configured) {
+                frappe.show_alert({message: r.message.message, indicator: "orange"});
+            } else if (r.message) {
+                frappe.show_alert({message: r.message.message || __("WhatsApp send failed"), indicator: "red"});
             }
         }
     });

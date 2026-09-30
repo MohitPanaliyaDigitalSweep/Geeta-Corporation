@@ -4,27 +4,40 @@
  "creation": "2026-08-05 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "default_company",
-  "default_warehouse",
-  "column_break_1",
-  "default_gst_rate",
-  "section_break_purchase",
-  "default_buying_price_list",
-  "default_purchase_tax_template",
-  "column_break_purchase",
-  "auto_increment_bill_no",
-  "section_break_sales",
-  "default_selling_price_list",
-  "default_sales_tax_template",
-  "column_break_sales",
-  "auto_print_after_save",
-  "section_break_behavior",
-  "keep_supplier_after_save",
-  "keep_customer_after_save",
-  "column_break_behavior",
-  "amended_from"
- ],
+"field_order": [
+   "default_company",
+   "default_warehouse",
+   "column_break_1",
+   "default_gst_rate",
+   "section_break_purchase",
+   "default_buying_price_list",
+   "default_purchase_tax_template",
+   "column_break_purchase",
+   "auto_increment_bill_no",
+   "section_break_sales",
+   "default_selling_price_list",
+   "default_sales_tax_template",
+   "column_break_sales",
+   "auto_print_after_save",
+   "section_break_behavior",
+   "keep_supplier_after_save",
+   "keep_customer_after_save",
+   "column_break_behavior",
+   "section_break_whatsapp",
+   "whatsapp_enabled",
+   "column_break_whatsapp_1",
+   "wa_base_url",
+   "section_break_whatsapp_auth",
+   "wa_api_key",
+   "column_break_whatsapp_2",
+   "wa_session_id",
+   "section_break_whatsapp_send",
+   "wa_print_format",
+   "wa_caption",
+   "column_break_whatsapp_3",
+   "wa_country_code",
+   "amended_from"
+  ],
  "fields": [
   {
    "fieldname": "default_company",
@@ -124,6 +137,80 @@
   {
    "fieldname": "column_break_behavior",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_whatsapp",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Integration"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, Send buttons push the PDF to WhatsApp directly through the OpenWA gateway instead of opening WhatsApp Web.",
+   "fieldname": "whatsapp_enabled",
+   "fieldtype": "Check",
+   "label": "Enable WhatsApp Sending"
+  },
+  {
+   "fieldname": "column_break_whatsapp_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "http://127.0.0.1:2785",
+   "description": "OpenWA gateway base URL (no trailing slash), e.g. http://127.0.0.1:2785",
+   "fieldname": "wa_base_url",
+   "fieldtype": "Data",
+   "label": "OpenWA Base URL"
+  },
+  {
+   "fieldname": "section_break_whatsapp_auth",
+   "fieldtype": "Section Break",
+   "label": "Authentication"
+  },
+  {
+   "description": "OpenWA API key with OPERATOR role for the session (X-API-Key).",
+   "fieldname": "wa_api_key",
+   "fieldtype": "Password",
+   "label": "OpenWA API Key"
+  },
+  {
+   "fieldname": "column_break_whatsapp_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "OpenWA session UUID to send through, e.g. de10ccbe-776c-49d3-8559-e9ddf551e9ac",
+   "fieldname": "wa_session_id",
+   "fieldtype": "Data",
+   "label": "OpenWA Session ID"
+  },
+  {
+   "fieldname": "section_break_whatsapp_send",
+   "fieldtype": "Section Break",
+   "label": "Send Defaults"
+  },
+  {
+   "default": "Test Print Format",
+   "description": "Print Format used for the WhatsApp PDF (Sales Invoice).",
+   "fieldname": "wa_print_format",
+   "fieldtype": "Data",
+   "label": "WhatsApp Print Format"
+  },
+  {
+   "default": "Sales Invoice {name} from {company}",
+   "description": "Caption template. Placeholders: {name}, {company}, {party}.",
+   "fieldname": "wa_caption",
+   "fieldtype": "Data",
+   "label": "WhatsApp Caption"
+  },
+  {
+   "fieldname": "column_break_whatsapp_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "91",
+   "description": "Default country code prepended to phone numbers missing one.",
+   "fieldname": "wa_country_code",
+   "fieldtype": "Data",
+   "label": "Country Code"
   },
   {
    "fieldname": "amended_from",

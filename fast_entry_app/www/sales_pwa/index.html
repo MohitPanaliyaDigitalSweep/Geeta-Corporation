@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#007BE0">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Fast Entry">
+    <link rel="manifest" href="/assets/fast_entry_app/pwa/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/assets/fast_entry_app/pwa/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/assets/fast_entry_app/pwa/icons/icon-192.png">
+    <title>Fast Sales Entry</title>
+    <style>
+        :root {
+            --primary: #007BE0;
+            --primary-tint: #C8E6FF;
+            --bg: #F8F8F8;
+            --card: #FFFFFF;
+            --border: #E2E2E2;
+            --text: #171717;
+            --text-2: #525252;
+            --text-3: #999999;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+            line-height: 1.45;
+            -webkit-font-smoothing: antialiased;
+            padding-bottom: 84px;
+        }
+        .app-bar {
+            position: sticky; top: 0; z-index: 40;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .app-brand { display: flex; align-items: center; gap: 10px; }
+        .app-home-btn {
+            border: 1px solid var(--border); background: #fff; color: var(--text-2);
+            width: 30px; height: 30px; border-radius: 7px; font-size: 16px; line-height: 1;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;
+        }
+        .app-home-btn:active { background: var(--bg); }
+        body.embed .app-bar { display: none; }
+        .app-logo {
+            width: 34px; height: 34px; border-radius: 7px;
+            background: #10B981; color: #fff; font-weight: 700; font-size: 14px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .app-title { font-size: 16px; font-weight: 650; }
+        .app-sub { font-size: 11px; color: var(--text-3); }
+        .draft-badge {
+            background: #FEF2F2; color: #B91C1C; border: 1px solid #FDC2C2;
+            font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+        }
+        .wrap { max-width: 520px; margin: 0 auto; padding: 12px 12px 96px; }
+        .card {
+            background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+            padding: 14px; margin-bottom: 12px;
+        }
+        .card-title {
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+            color: var(--text-3); margin-bottom: 10px;
+        }
+        .field { margin-bottom: 10px; }
+        .field:last-child { margin-bottom: 0; }
+        label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+        label .reqd { color: #EF4444; }
+        input[type="text"], input[type="number"], input[type="date"], select {
+            width: 100%; padding: 9px 10px; font-size: 14px; color: var(--text);
+            border: 1px solid #C7C7C7; border-radius: 7px; background: #fff; outline: none;
+            -webkit-appearance: none; appearance: none;
+        }
+        input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px #DFF0FF; }
+        .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        .check-field { display: flex; align-items: center; gap: 8px; }
+        .check-field input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--primary); }
+        .check-field label { margin: 0; font-weight: 500; }
+        .balance-tag {
+            display: inline-block; margin-top: 5px; font-size: 11px; font-weight: 600;
+            padding: 2px 8px; border-radius: 999px;
+        }
+        .bal-unpaid { background: #FEF2F2; color: #B91C1C; border: 1px solid #FDC2C2; }
+        .bal-advance { background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+
+        .item-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #fff; }
+        .item-head { display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-start; }
+        .item-num { font-size: 12px; font-weight: 700; color: var(--text-3); padding-top: 9px; min-width: 20px; }
+        .item-input-wrap { flex: 1; position: relative; }
+        .item-code-hint { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+        .del-item {
+            background: none; border: none; color: var(--text-3); font-size: 18px;
+            padding: 6px 4px; cursor: pointer;
+        }
+        .del-item:hover { color: #EF4444; }
+        .add-item-btn {
+            width: 100%; padding: 10px; font-weight: 600; font-size: 13px;
+            background: #fff; color: var(--primary); border: 1px dashed var(--primary);
+            border-radius: 9px; cursor: pointer;
+        }
+        .add-item-btn:active { background: var(--primary-tint); }
+
+        .dropdown {
+            position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 80;
+            background: #fff; border: 1px solid var(--border); border-radius: 8px;
+            box-shadow: 0 6px 20px rgba(0,0,0,.14); max-height: 260px; overflow-y: auto;
+        }
+        .dropdown-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #F3F3F3; }
+        .dropdown-item:last-child { border-bottom: none; }
+        .dropdown-item.active { background: var(--primary-tint); }
+        .dd-primary { display: block; font-size: 13px; font-weight: 550; }
+        .dd-secondary { display: block; font-size: 11px; color: var(--text-3); }
+
+        .totals { display: flex; flex-direction: column; gap: 7px; }
+        .t-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); }
+        .t-row.total { font-size: 16px; font-weight: 700; color: var(--text); border-top: 1px solid var(--border); padding-top: 8px; }
+        .t-tax { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); }
+
+        .bottom-bar {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+            background: #fff; border-top: 1px solid var(--border);
+            padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+        }
+        .bottom-inner { max-width: 520px; margin: 0 auto; display: flex; gap: 10px; }
+        .btn {
+            border: none; border-radius: 8px; padding: 13px 16px; font-size: 14px; font-weight: 650;
+            cursor: pointer; flex: 1;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:active { background: #0066BC; }
+        .btn-secondary { background: #fff; color: var(--text-2); border: 1px solid #C7C7C7; flex: 0 0 auto; }
+        .btn[disabled] { opacity: .5; cursor: default; }
+
+        .toast {
+            position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 90;
+            background: #171717; color: #fff; padding: 11px 18px; border-radius: 9px;
+            font-size: 13px; display: flex; align-items: center; gap: 8px;
+            opacity: 0; pointer-events: none; transition: opacity .18s ease;
+            max-width: 92vw; box-shadow: 0 8px 24px rgba(0,0,0,.3);
+        }
+        .toast.show { opacity: 1; pointer-events: auto; }
+        .toast a { color: #8FD0FF; font-weight: 600; }
+        .toast.err { background: #B91C1C; }
+        .spinner {
+            width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35);
+            border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
+            display: inline-block; vertical-align: -2px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hint-note {
+            background: #FFF7ED; border: 1px solid #FED7AA; color: #9A3412;
+            font-size: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 12px;
+        }
+        @media (min-width: 560px) {
+            body { padding-bottom: 90px; }
+        }
+    </style>
+</head>
+<body data-csrf="{{ csrf_token }}" data-site="{{ site_name }}">
+    <div class="app-bar" id="app-bar">
+        <div class="app-brand">
+            <button type="button" class="app-home-btn" id="app-home" title="Back to App">&larr;</button>
+            <div class="app-logo">FE</div>
+            <div>
+                <div class="app-title">Fast Sales Entry</div>
+                <div class="app-sub">{{ username }}</div>
+            </div>
+        </div>
+        <span class="draft-badge">Draft Only</span>
+    </div>
+
+    <div class="wrap">
+        <div class="hint-note">Invoices are always created as <b>Draft</b> (not submitted) for later review &amp; approval.</div>
+
+        <div class="card">
+            <div class="card-title">Party</div>
+            <div class="field">
+                <label>Company <span class="reqd">*</span></label>
+                <select id="f-company"></select>
+            </div>
+            <div class="field" style="position:relative">
+                <label>Customer <span class="reqd">*</span></label>
+                <input type="text" id="f-customer" placeholder="Type to search..." autocomplete="off">
+                <span class="balance-tag" id="f-customer-balance" style="display:none"></span>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Invoice</div>
+            <div class="row-3">
+                <div class="field">
+                    <label>Date <span class="reqd">*</span></label>
+                    <input type="date" id="f-date">
+                </div>
+                <div class="field">
+                    <label>GST Type</label>
+                    <select id="f-gst-type">
+                        <option value="intra">Intra (CGST+SGST)</option>
+                        <option value="inter">Inter (IGST)</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Tax Override</label>
+                    <select id="f-tax-override">
+                        <option value="">Per Item</option>
+                        <option value="5">5%</option>
+                        <option value="12">12%</option>
+                        <option value="18">18%</option>
+                        <option value="28">28%</option>
+                    </select>
+                </div>
+            </div>
+            <div class="field" style="position:relative">
+                <label>Warehouse</label>
+                <input type="text" id="f-warehouse" placeholder="Default warehouse" autocomplete="off">
+            </div>
+            <div class="row-2">
+                <div class="field check-field">
+                    <input type="checkbox" id="f-stock-impact" checked>
+                    <label for="f-stock-impact">Update Stock</label>
+                </div>
+                <div class="field">
+                    <label>Distance (km)</label>
+                    <input type="number" id="f-distance" placeholder="0" min="0">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Dispatch</div>
+            <div class="row-2">
+                <div class="field">
+                    <label>Delivery Person</label>
+                    <select id="f-driver"><option value="">Select</option></select>
+                </div>
+                <div class="field">
+                    <label>Vehicle</label>
+                    <select id="f-vehicle"><option value="">Select</option></select>
+                </div>
+            </div>
+            <div class="field">
+                <label>Sales Person</label>
+                <select id="f-sales-person"><option value="">Select</option></select>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Items</div>
+            <div id="items"></div>
+            <button type="button" class="add-item-btn" id="add-item">+ Add Item</button>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Discounts &amp; Totals</div>
+            <div class="row-3">
+                <div class="field">
+                    <label>Disc %</label>
+                    <input type="number" id="f-disc-pct" value="0" min="0" step="any">
+                </div>
+                <div class="field">
+                    <label>Disc Amt</label>
+                    <input type="number" id="f-disc-amt" value="0" min="0" step="any">
+                </div>
+                <div class="field">
+                    <label>Freight</label>
+                    <input type="number" id="f-freight" value="0" min="0" step="any">
+                </div>
+            </div>
+            <div class="totals">
+                <div class="t-row"><span>Sub Total</span><span id="t-sub">0.00</span></div>
+                <div class="t-row"><span>Discount</span><span id="t-disc">-0.00</span></div>
+                <div class="t-row"><span>Freight (+GST)</span><span id="t-freight">+0.00</span></div>
+                <div class="t-tax" id="t-cgst-row"><span>CGST</span><span id="t-cgst">0.00</span></div>
+                <div class="t-tax" id="t-sgst-row"><span>SGST</span><span id="t-sgst">0.00</span></div>
+                <div class="t-tax" id="t-igst-row" style="display:none"><span>IGST</span><span id="t-igst">0.00</span></div>
+                <div class="t-row"><span>Round Off</span><span id="t-round">0.00</span></div>
+                <div class="t-row total"><span>Grand Total</span><span id="t-net">0.00</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <div class="bottom-inner">
+            <button type="button" class="btn btn-secondary" id="save-new">Save &amp; New</button>
+            <button type="button" class="btn btn-primary" id="save">Save as Draft</button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        (function () {
+            "use strict";
+            var CSRF = document.body.getAttribute("data-csrf");
+            var COMPANY_JSON = {{ companies_json | safe }};
+            var DEFAULT_SALES_PERSON = {{ default_sales_person_json | safe }} || "";
+            var EMBEDDED = /[?&]embed=1/.test(location.search);
+
+            var $ = function (sel) { return document.querySelector(sel); };
+            var items = [];
+            var dropdown = null;
+
+            function fmt(v) { return (parseFloat(v) || 0).toFixed(2); }
+            function flt(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+            function toast(msg, cls, ms) {
+                var t = $("#toast");
+                t.className = "toast show" + (cls === "err" ? " err" : "");
+                t.innerHTML = msg;
+                clearTimeout(t._h);
+                t._h = setTimeout(function () { t.className = "toast"; }, ms || 3500);
+            }
+
+            function call(method, args, cb) {
+                fetch("/api/method/" + method, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Frappe-CSRF-Token": CSRF,
+                        "X-Frappe-Site-Name": document.body.getAttribute("data-site"),
+                    },
+                    credentials: "same-origin",
+                    body: JSON.stringify(args || {}),
+                })
+                    .then(function (res) { return res.json().catch(function () { return {}; }); })
+                    .then(function (data) {
+                        if (data && data.message !== undefined) { cb && cb(data.message); }
+                        else if (data && data.exception) {
+                            var m = "";
+                            try { m = JSON.parse(data._server_messages || "[]")[0] || "Error"; }
+                            catch (e) { m = data._server_messages || "Error"; }
+                            toast(String(m).replace(/<[^>]+>/g, "").replace(/\n/g, " ").slice(0, 200), "err", 5000);
+                        } else if (data && data.exc_type) {
+                            var em = "";
+                            try { em = JSON.parse(data._server_messages || "[]")[0] || data.exc_type; }
+                            catch (e) { em = data.exc_type; }
+                            toast(String(em).replace(/<[^>]+>/g, "").replace(/\n/g, " ").slice(0, 200), "err", 5000);
+                        } else {
+                            cb && cb(null);
+                        }
+                    })
+                    .catch(function (err) { toast("Network error: " + err.message, "err"); });
+            }
+
+            /* ---------- global dropdown ---------- */
+            function showDropdown(anchor, opts, onPick) {
+                hideDropdown();
+                dropdown = document.createElement("div");
+                dropdown.className = "dropdown";
+                opts.forEach(function (o, i) {
+                    var d = document.createElement("div");
+                    d.className = "dropdown-item" + (i === 0 ? " active" : "");
+                    d.innerHTML = '<span class="dd-primary">' + (o.primary || "") + '</span>' +
+                        '<span class="dd-secondary">' + (o.secondary || "") + '</span>';
+                    d.dataset.idx = i;
+                    d.addEventListener("mousedown", function (e) { e.preventDefault(); onPick(o); hideDropdown(); });
+                    dropdown.appendChild(d);
+                });
+                dropdown.__opts = opts;
+                dropdown.__onPick = onPick;
+                anchor.parentNode.appendChild(dropdown);
+            }
+            function hideDropdown() { if (dropdown) { dropdown.remove(); dropdown = null; } }
+
+            function bindNavKeys(input) {
+                input.addEventListener("keydown", function (e) {
+                    if (!dropdown) return;
+                    var act = dropdown.querySelector(".dropdown-item.active");
+                    var all = Array.prototype.slice.call(dropdown.querySelectorAll(".dropdown-item"));
+                    if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        var ni = act ? (all.indexOf(act) + 1) % all.length : 0;
+                        all.forEach(function (d) { d.classList.remove("active"); });
+                        all[ni].classList.add("active");
+                        if (all[ni].scrollIntoView) all[ni].scrollIntoView({ block: "nearest" });
+                    } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        var pi = act ? (all.indexOf(act) - 1 + all.length) % all.length : all.length - 1;
+                        all.forEach(function (d) { d.classList.remove("active"); });
+                        all[pi].classList.add("active");
+                        if (all[pi].scrollIntoView) all[pi].scrollIntoView({ block: "nearest" });
+                    } else if (e.key === "Enter") {
+                        if (act) { e.preventDefault(); var o = dropdown.__opts[all.indexOf(act)]; dropdown.__onPick(o); hideDropdown(); }
+                    } else if (e.key === "Escape") {
+                        hideDropdown();
+                    }
+                });
+                input.addEventListener("blur", function () { setTimeout(hideDropdown, 150); });
+            }
+
+            /* ---------- companies ---------- */
+            function loadCompanies() {
+                var sel = $("#f-company");
+                var opts = COMPANY_JSON || [];
+                sel.innerHTML = '<option value="">Select Company</option>';
+                opts.forEach(function (c) {
+                    var o = document.createElement("option");
+                    o.value = c; o.textContent = c;
+                    sel.appendChild(o);
+                });
+                var last = localStorage.getItem("fe_pwa_last_company");
+                if (opts.indexOf(last) > -1) sel.value = last;
+                sel.addEventListener("change", function () {
+                    localStorage.setItem("fe_pwa_last_company", sel.value);
+                    if ($("#f-customer").dataset.customer) getCustomerDetails($("#f-customer").dataset.customer);
+                });
+            }
+
+            /* ---------- customers ---------- */
+            function loadCustomers() {
+                var inp = $("#f-customer");
+                bindNavKeys(inp);
+                inp.addEventListener("input", function () {
+                    var q = this.value.trim();
+                    if (!q) { hideDropdown(); return; }
+                    call("fast_entry_app.api.party.search_customers", { search: q, company: $("#f-company").value, limit: 12 }, function (list) {
+                        if (inp.value.trim().length < 1) return;
+                        var opts = (list || []).map(function (c) {
+                            return { primary: c.customer_name || c.name, secondary: c.name, data: c };
+                        });
+                        if (!opts.length) { hideDropdown(); return; }
+                        showDropdown(inp, opts, function (o) {
+                            inp.value = o.primary;
+                            inp.dataset.customer = o.data.name;
+                            getCustomerDetails(o.data.name);
+                        });
+                    });
+                });
+            }
+            function getCustomerDetails(name) {
+                call("fast_entry_app.api.party.get_customer_details", { customer: name, company: $("#f-company").value || "" }, function (d) {
+                    if (!d) return;
+                    var bal = flt(d.outstanding);
+                    var unpaid = d.balance_type === "Dr";
+                    var el = $("#f-customer-balance");
+                    el.style.display = "inline-block";
+                    el.className = "balance-tag " + (unpaid ? "bal-unpaid" : "bal-advance");
+                    el.textContent = (unpaid ? "Unpaid: " : "Advance: ") + "Rs " + bal.toFixed(2);
+                    if (d.gst_type) $("#f-gst-type").value = d.gst_type;
+                });
+            }
+
+            /* ---------- warehouse ---------- */
+            function loadWarehouse() {
+                var inp = $("#f-warehouse");
+                bindNavKeys(inp);
+                inp.addEventListener("input", function () {
+                    var q = this.value.trim();
+                    if (!q) { hideDropdown(); return; }
+                    call("fast_entry_app.api.warehouse.search_warehouses", { search: q, company: $("#f-company").value, limit: 10 }, function (list) {
+                        var opts = (list || []).map(function (w) {
+                            return { primary: w.warehouse_name || w.name, secondary: w.name, data: w };
+                        });
+                        if (!opts.length) { hideDropdown(); return; }
+                        showDropdown(inp, opts, function (o) {
+                            inp.value = o.primary; inp.dataset.warehouse = o.data.name;
+                        });
+                    });
+                });
+            }
+
+            /* ---------- dispatch selects ---------- */
+            function loadSelects() {
+                call("fast_entry_app.api.sales.search_drivers", { search: "", limit: 100 }, function (list) {
+                    var sel = $("#f-driver");
+                    (list || []).forEach(function (d) {
+                        var o = document.createElement("option");
+                        o.value = d.label; o.textContent = d.label;
+                        sel.appendChild(o);
+                    });
+                });
+                call("fast_entry_app.api.sales.search_vehicles", { search: "", limit: 100 }, function (list) {
+                    var sel = $("#f-vehicle");
+                    (list || []).forEach(function (v) {
+                        var o = document.createElement("option");
+                        o.value = v.label;
+                        o.textContent = v.label + (v.make ? " (" + v.make + ")" : "");
+                        sel.appendChild(o);
+                    });
+                });
+                call("fast_entry_app.api.sales.search_sales_persons", { search: "", limit: 100 }, function (list) {
+                    var sel = $("#f-sales-person");
+                    (list || []).forEach(function (s) {
+                        var o = document.createElement("option");
+                        o.value = s.label; o.textContent = s.label;
+                        sel.appendChild(o);
+                    });
+                    if (DEFAULT_SALES_PERSON) { sel.value = DEFAULT_SALES_PERSON; }
+                });
+            }
+
+            /* ---------- items ---------- */
+            function addEmptyRow() {
+                var row = {
+                    idx: items.length + 1, item_code: "", item_name: "", box: 0, pcs: 0, ltr: 0,
+                    qty: 0, rate: 0, amount: 0, nos_factor: 1, litre_factor: 0, stock_uom: "",
+                    warehouse: "", gst_rate: 0,
+                };
+                items.push(row);
+                renderRow(row);
+                return row;
+            }
+
+            function renderRow(row) {
+                var root = $("#items");
+                var el = document.createElement("div");
+                el.className = "item-card";
+                el.id = "row-" + row.idx;
+                el.innerHTML =
+                    '<div class="item-head">' +
+                        '<div class="item-num">' + row.idx + '</div>' +
+                        '<div class="item-input-wrap">' +
+                            '<input type="text" class="item-inp" placeholder="Search item..." autocomplete="off">' +
+                            '<div class="item-code-hint"></div>' +
+                        '</div>' +
+                        '<button type="button" class="del-item">&times;</button>' +
+                    '</div>' +
+                    '<div class="row-3">' +
+                        '<div class="field"><label>Box</label><input type="number" class="f-box" min="0" step="1"></div>' +
+                        '<div class="field"><label>PCS</label><input type="number" class="f-pcs" min="0"></div>' +
+                        '<div class="field"><label>LTR</label><input type="number" class="f-ltr" min="0" step="0.01"></div>' +
+                    '</div>' +
+                    '<div class="row-3">' +
+                        '<div class="field"><label>Total Litre</label><input type="number" class="f-qty" readonly min="0"></div>' +
+                        '<div class="field"><label>Rate</label><input type="number" class="f-rate" min="0" step="0.01"></div>' +
+                        '<div class="field"><label>Amount</label><input type="number" class="f-amount" readonly></div>' +
+                    '</div>';
+                root.appendChild(el);
+                row._el = el;
+
+                var inp = el.querySelector(".item-inp");
+                bindNavKeys(inp);
+                inp.addEventListener("input", function () {
+                    var q = this.value.trim();
+                    if (!q) { hideDropdown(); return; }
+                    call("fast_entry_app.api.item.search_items", { search: q, company: $("#f-company").value, limit: 12 }, function (list) {
+                        if (inp.value.trim().length < 1) return;
+                        var opts = (list || []).map(function (it) {
+                            var hint = "";
+                            if (it.uoms && it.uoms.length > 1) {
+                                var alt = it.uoms.filter(function (u) { return flt(u.conversion_factor) !== 1; })[0];
+                                hint = alt ? alt.uom : "";
+                            }
+                            return { primary: it.item_name || it.item_code, secondary: it.item_code + (hint ? " (" + hint + ")" : ""), data: it };
+                        });
+                        if (!opts.length) { hideDropdown(); return; }
+                        showDropdown(inp, opts, function (o) {
+                            inp.value = o.primary;
+                            onItemSelected(row, o.data);
+                        });
+                    });
+                });
+
+                el.querySelector(".del-item").addEventListener("click", function () {
+                    var i = items.indexOf(row);
+                    if (i > -1) items.splice(i, 1);
+                    el.remove();
+                    reindex();
+                    calcTotals();
+                });
+
+                var binds = [
+                    ["f-box", "box"], ["f-pcs", "pcs"], ["f-ltr", "ltr"], ["f-rate", "rate"],
+                ];
+                binds.forEach(function (b) {
+                    el.querySelector("." + b[0]).addEventListener("input", function () {
+                        row[b[1]] = flt(this.value);
+                        calcRow(row, b[1]);
+                    });
+                });
+            }
+
+            function reindex() {
+                items.forEach(function (r, i) {
+                    r.idx = i + 1;
+                    var el = r._el;
+                    el.id = "row-" + (i + 1);
+                    el.querySelector(".item-num").textContent = i + 1;
+                });
+                if (!items.length) addEmptyRow();
+            }
+
+            function onItemSelected(row, it) {
+                call("fast_entry_app.api.item.get_item_details", { item_code: it.item_code, warehouse: $("#f-warehouse").dataset.warehouse || "", company: $("#f-company").value || "" }, function (d) {
+                    if (!d) return;
+                    row.item_code = d.item_code || it.item_code;
+                    row.item_name = d.item_name || it.item_name;
+                    row.stock_uom = d.stock_uom;
+                    row.gst_rate = flt(d.gst_rate);
+
+                    var uoms = (it.uoms && it.uoms.length) ? it.uoms : (d.uoms || []);
+                    row.nos_factor = 1;
+                    row.litre_factor = 1;
+                    var hasBox = false;
+                    if (uoms.length) {
+                        var boxUom = uoms.filter(function (u) { return u.uom === "Box"; })[0];
+                        var nosUom = uoms.filter(function (u) { return u.uom === "Nos"; })[0];
+                        var litreUom = uoms.filter(function (u) { return u.uom === "Litre" || u.uom === "Kg"; })[0];
+                        hasBox = !!boxUom;
+                        if (nosUom) row.nos_factor = flt(nosUom.conversion_factor) || 1;
+                        if (litreUom) row.litre_factor = flt(litreUom.conversion_factor) || 0;
+                    }
+                    if (!hasBox && d.stock_uom === "Nos" && row.nos_factor === 1) hasBox = true;
+
+                    row.box = hasBox ? 1 : 0;
+                    row.pcs = hasBox ? flt(row.box * row.nos_factor) : 1;
+                    row.ltr = row.litre_factor;
+                    if (!row.warehouse && $("#f-warehouse").dataset.warehouse) row.warehouse = $("#f-warehouse").dataset.warehouse;
+                    else if (d.warehouse) row.warehouse = d.warehouse;
+                    if (!row.rate && d.rate) row.rate = flt(d.rate);
+
+                    row._el.querySelector(".item-inp").value = row.item_name;
+                    row._el.querySelector(".item-code-hint").textContent = row.item_code + (d.gst_rate ? " | GST " + flt(d.gst_rate) + "%" : "");
+                    calcRow(row, "box");
+                });
+            }
+
+            function calcRow(row, source) {
+                var nf = row.nos_factor || 1;
+                if (source === "box") { row.pcs = flt(row.box * nf); }
+                else if (source === "pcs") { row.box = (row.pcs && nf) ? flt(row.pcs / nf) : 0; }
+                row.qty = flt(row.pcs * row.ltr);
+                row.amount = flt(row.pcs * row.rate);
+                var el = row._el;
+                el.querySelector(".f-box").value = row.box || "";
+                el.querySelector(".f-pcs").value = row.pcs || "";
+                el.querySelector(".f-ltr").value = row.ltr || "";
+                el.querySelector(".f-qty").value = row.qty || "";
+                el.querySelector(".f-rate").value = row.rate || "";
+                el.querySelector(".f-amount").value = row.amount || "";
+                calcTotals();
+            }
+
+            function calcTotals() {
+                var sub = 0;
+                items.forEach(function (r) {
+                    if (r.item_code) sub += flt(r.amount);
+                });
+                var disc = flt($("#f-disc-amt").value);
+                var freight = flt($("#f-freight").value);
+                var freightGst = freight * 0.18;
+                var after = sub - disc + freight + freightGst;
+
+                var ovr = flt($("#f-tax-override").value);
+                var gstType = $("#f-gst-type").value;
+                var rate = ovr;
+                if (!rate) {
+                    for (var i = 0; i < items.length; i++) {
+                        if (flt(items[i].gst_rate) > 0) { rate = flt(items[i].gst_rate); break; }
+                    }
+                }
+
+                var cgst = 0, sgst = 0, igst = 0;
+                if (rate > 0) {
+                    if (gstType === "intra") { cgst = sgst = after * (rate / 2) / 100; }
+                    else { igst = after * rate / 100; }
+                }
+                var tax = cgst + sgst + igst;
+                var raw = after + tax;
+                var round = Math.round(raw) - raw;
+                var net = Math.round(raw);
+
+                $("#t-sub").textContent = fmt(sub);
+                $("#t-disc").textContent = "-" + fmt(disc);
+                $("#t-freight").textContent = "+" + fmt(freight + freightGst);
+                $("#t-cgst").textContent = fmt(cgst);
+                $("#t-sgst").textContent = fmt(sgst);
+                $("#t-igst").textContent = fmt(igst);
+                $("#t-round").textContent = fmt(round);
+                $("#t-net").textContent = fmt(net);
+
+                $("#t-cgst-row").style.display = gstType === "intra" ? "flex" : "none";
+                $("#t-sgst-row").style.display = gstType === "intra" ? "flex" : "none";
+                $("#t-igst-row").style.display = gstType === "inter" ? "flex" : "none";
+            }
+
+            /* ---------- validation + save ---------- */
+            function validate() {
+                var errs = [];
+                if (!$("#f-company").value) errs.push("Company is required.");
+                if (!$("#f-customer").value || !$("#f-customer").dataset.customer) errs.push("Customer is required.");
+                if (!$("#f-date").value) errs.push("Invoice Date is required.");
+                var valid = items.filter(function (r) { return r.item_code && flt(r.pcs) > 0; });
+                if (!valid.length) errs.push("At least one item with PCS > 0 is required.");
+                valid.forEach(function (r) { if (flt(r.rate) <= 0) errs.push("Item " + r.item_code + ": rate required."); });
+                return errs;
+            }
+
+            function getPayload() {
+                return {
+                    company: $("#f-company").value,
+                    customer: $("#f-customer").dataset.customer,
+                    invoice_date: $("#f-date").value,
+                    posting_date: $("#f-date").value,
+                    gst_type: $("#f-gst-type").value,
+                    tax_override: flt($("#f-tax-override").value),
+                    warehouse: $("#f-warehouse").dataset.warehouse || "",
+                    update_stock: $("#f-stock-impact").checked ? 1 : 0,
+                    auto_einvoice: 0,
+                    auto_ewaybill: 0,
+                    delivery_person: $("#f-driver").value,
+                    delivery_vehicle: $("#f-vehicle").value,
+                    distance: flt($("#f-distance").value),
+                    sales_person: $("#f-sales-person").value,
+                    discount: flt($("#f-disc-amt").value),
+                    discount_pct: flt($("#f-disc-pct").value),
+                    freight: flt($("#f-freight").value),
+                    freight_gst: flt($("#f-freight").value) * 0.18,
+                    draft: 1,
+                    items: items.filter(function (r) { return r.item_code; }).map(function (r) {
+                        return {
+                            item_code: r.item_code, item_name: r.item_name, box: r.box, pcs: r.pcs,
+                            ltr: r.ltr, qty: r.qty, rate: r.rate, amount: r.amount, uom: "Litre",
+                            stock_uom: r.stock_uom, nos_factor: r.nos_factor, litre_factor: r.litre_factor,
+                            conversion_factor: r.ltr ? flt(1 / r.ltr) : 1,
+                            total_ltr: r.qty || 0,
+                            warehouse: r.warehouse, gst_rate: r.gst_rate,
+                        };
+                    }),
+                };
+            }
+
+            function doSave(afterSave) {
+                var errs = validate();
+                if (errs.length) { toast(errs.join("<br>"), "err", 5000); return; }
+                var btn = $("#save");
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span> Saving...';
+                call("fast_entry_app.api.sales.create_sales_invoice", { data: getPayload() }, function (msg) {
+                    btn.disabled = false; btn.innerHTML = "Save as Draft";
+                    if (msg && msg.name) {
+                        toast('Draft saved: <a href="/app/sales-invoice/' + msg.name + '" target="_blank">' + msg.name + '</a>');
+                        if (afterSave) afterSave();
+                    }
+                });
+                setTimeout(function () { btn.disabled = false; btn.innerHTML = "Save as Draft"; }, 1500);
+            }
+
+            /* ---------- wire up ---------- */
+            $("#f-disc-pct").addEventListener("input", function () {
+                var subTot = items.reduce(function (s, r) { return s + flt(r.amount); }, 0);
+                $("#f-disc-amt").value = (subTot * flt(this.value) / 100).toFixed(2);
+                calcTotals();
+            });
+            $("#f-disc-amt").addEventListener("input", function () {
+                var subTot = items.reduce(function (s, r) { return s + flt(r.amount); }, 0);
+                if (subTot > 0) $("#f-disc-pct").value = (flt(this.value) / subTot * 100).toFixed(2);
+                calcTotals();
+            });
+            $("#f-freight").addEventListener("input", calcTotals);
+            $("#f-tax-override").addEventListener("change", calcTotals);
+            $("#f-gst-type").addEventListener("change", calcTotals);
+
+            $("#save").addEventListener("click", function () { doSave(); });
+            $("#save-new").addEventListener("click", function () { doSave(clearForm); });
+            $("#add-item").addEventListener("click", function () { addEmptyRow(); });
+
+            function clearForm() {
+                while (items.length) { var r = items.pop(); if (r._el) r._el.remove(); }
+                $("#items").innerHTML = "";
+                $("#f-date").value = new Date().toISOString().slice(0, 10);
+                $("#f-tax-override").value = "";
+                $("#f-disc-pct").value = "0";
+                $("#f-disc-amt").value = "0";
+                $("#f-freight").value = "0";
+                $("#f-distance").value = "";
+                $("#f-stock-impact").checked = true;
+                $("#f-warehouse").value = ""; delete $("#f-warehouse").dataset.warehouse;
+                addEmptyRow();
+                calcTotals();
+            }
+
+            window.addEventListener("click", function (e) {
+                if (!e.target.closest(".dropdown") && !e.target.closest(".item-inp") &&
+                    !e.target.closest("#f-customer") && !e.target.closest("#f-warehouse")) {
+                    hideDropdown();
+                }
+            });
+
+            if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+                navigator.serviceWorker.register("/sales_pwa/sw.js").catch(function () {});
+            }
+
+            /* init */
+            if (EMBEDDED) document.body.classList.add("embed");
+            $("#app-home").addEventListener("click", function () { location.href = "/hrms"; });
+            loadCompanies();
+            loadCustomers();
+            loadWarehouse();
+            loadSelects();
+            $("#f-date").value = new Date().toISOString().slice(0, 10);
+            addEmptyRow();
+            calcTotals();
+        })();
+    </script>
+</body>
+</html>

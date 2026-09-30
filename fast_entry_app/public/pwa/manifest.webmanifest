@@ -1,0 +1,25 @@
+{
+  "name": "Fast Entry PWA",
+  "short_name": "Fast Entry",
+  "description": "Fast Sales & Purchase Entry for ERPNext",
+  "start_url": "/sales_pwa",
+  "scope": "/sales_pwa",
+  "display": "standalone",
+  "background_color": "#F8F8F8",
+  "theme_color": "#007BE0",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/assets/fast_entry_app/pwa/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/fast_entry_app/pwa/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
