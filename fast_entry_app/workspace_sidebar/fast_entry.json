@@ -117,6 +117,18 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "cloud-download",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Load Master Data",
+   "link_to": "fast-master-data",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "send",
    "indent": 0,
    "keep_closed": 0,
