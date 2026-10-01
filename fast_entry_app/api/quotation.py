@@ -3,6 +3,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, flt, getdate, nowdate
 
+from fast_entry_app.api.item import get_invoice_uom as _invoice_uom
 from fast_entry_app.api.sales import _apply_manual_sales_taxes, _get_sales_tax_template, _get_tax_account
 
 _get_qt_tax_account = _get_tax_account
@@ -76,14 +77,15 @@ def create_quotation(data):
 
         amount = flt(pcs * rate)
         total_ltr = flt(item_data.get("total_ltr")) or 0
+        uom_info = _invoice_uom(item_code)
 
         item_row = qt.append("items", {
             "item_code": item_code,
             "qty": pcs,
             "rate": rate,
             "amount": amount,
-            "uom": "Nos",
-            "conversion_factor": 1.0,
+            "uom": uom_info["uom"],
+            "conversion_factor": uom_info["conversion_factor"],
             "warehouse": item_data.get("warehouse") or data.get("warehouse") or "",
         })
         if has_fe_fields:

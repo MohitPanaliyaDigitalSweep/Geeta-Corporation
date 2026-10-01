@@ -390,9 +390,14 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                     row.nos_factor = 1;
                     row.litre_factor = 1;
                     if (uoms.length) {
+                        const box_uom = uoms.find(u => u.uom === "Box");
                         const nos_uom = uoms.find(u => u.uom === "Nos");
                         const litre_uom = uoms.find(u => u.uom === "Litre" || u.uom === "Kg");
-                        if (nos_uom) row.nos_factor = nos_uom.conversion_factor || 1;
+                        // Option B (piece-based stock UOM): pieces-per-box now lives on
+                        // the Box row, because Nos is the stock UOM (cf 1). Legacy
+                        // box-based masters still keep it on the Nos row.
+                        const pack_row = (d.stock_uom === "Nos") ? (box_uom || nos_uom) : nos_uom;
+                        if (pack_row) row.nos_factor = pack_row.conversion_factor || 1;
                         if (litre_uom) row.litre_factor = litre_uom.conversion_factor || 0;
                     }
                     row.ltr = row.litre_factor;

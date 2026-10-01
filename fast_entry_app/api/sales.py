@@ -4,6 +4,9 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
+from fast_entry_app.api.item import get_invoice_uom as _invoice_uom
+from fast_entry_app.api.item import get_item_uom as _pack_factors
+
 # Reject duplicate submissions within this window (seconds). Prevents
 # repeated Save clicks from creating multiple identical invoices.
 FAST_ENTRY_DEDUP_WINDOW = 120
@@ -181,18 +184,9 @@ def create_sales_invoice(data):
             item_master = frappe.db.get_value(
                 "Item", item_code, ["custom_box", "custom_ltr"], as_dict=True
             ) or {}
-        uoms = frappe.get_all(
-            "UOM Conversion Detail",
-            filters={"parent": item_code, "uom": ["in", ["Nos", "Litre", "Kg"]]},
-            fields=["uom", "conversion_factor"],
-        )
-        nos_factor = 1
-        litre_factor = 0
-        for u in uoms:
-            if u.uom == "Nos":
-                nos_factor = flt(u.conversion_factor) or 1
-            elif u.uom in ("Litre", "Kg"):
-                litre_factor = flt(u.conversion_factor) or 0
+        uoms = _pack_factors(item_code)
+        nos_factor = uoms["nos_factor"]
+        litre_factor = uoms["litre_factor"]
         nos_factor = flt(item_data.get("nos_factor")) or nos_factor
         litre_factor = flt(item_data.get("litre_factor")) or litre_factor
 
@@ -207,16 +201,16 @@ def create_sales_invoice(data):
         hsn_code = ""
         if frappe.db.has_column("Item", "gst_hsn_code"):
             hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code") or ""
-        conversion_factor = flt(item_data.get("conversion_factor")) or 1.0
         amount = flt(pcs * rate)
+        uom_info = _invoice_uom(item_code)
 
         item_row = si.append("items", {
             "item_code": item_code,
             "qty": pcs,
             "rate": rate,
             "amount": amount,
-            "uom": "Nos",
-            "conversion_factor": 1.0,
+            "uom": uom_info["uom"],
+            "conversion_factor": uom_info["conversion_factor"],
             "stock_qty": pcs,
             "warehouse": item_data.get("warehouse") or data.get("warehouse") or "",
             "fe_box": box,

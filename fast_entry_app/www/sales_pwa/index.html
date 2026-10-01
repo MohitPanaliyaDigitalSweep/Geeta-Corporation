@@ -605,7 +605,11 @@
                         var nosUom = uoms.filter(function (u) { return u.uom === "Nos"; })[0];
                         var litreUom = uoms.filter(function (u) { return u.uom === "Litre" || u.uom === "Kg"; })[0];
                         hasBox = !!boxUom;
-                        if (nosUom) row.nos_factor = flt(nosUom.conversion_factor) || 1;
+                        // Option B (piece-based stock UOM): pieces-per-box now lives on
+                        // the Box row, because Nos is the stock UOM (cf 1). Legacy
+                        // box-based masters still keep it on the Nos row.
+                        var packRow = (d.stock_uom === "Nos") ? (boxUom || nosUom) : nosUom;
+                        if (packRow) row.nos_factor = flt(packRow.conversion_factor) || 1;
                         if (litreUom) row.litre_factor = flt(litreUom.conversion_factor) || 0;
                     }
                     if (!hasBox && d.stock_uom === "Nos" && row.nos_factor === 1) hasBox = true;

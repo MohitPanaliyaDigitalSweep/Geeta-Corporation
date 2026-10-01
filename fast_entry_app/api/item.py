@@ -2,6 +2,12 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+# The UOM Fast Entry books every transaction in. It is a single named constant
+# because it is a semantic property of the app (entries are counted in pieces),
+# not a per-document value -- the concrete UOM written on a row is always read
+# from the Item master via get_invoice_uom().
+PIECE_UOM = "Nos"
+
 
 @frappe.whitelist()
 def search_items(search, company=None, limit=20):
@@ -211,34 +217,90 @@ def get_uom_details(item_code, uom):
 
 @frappe.whitelist()
 def get_item_uom(item_code):
-    """Get Nos and Litre/Kg conversion factors for an item.
+    """Get pieces-per-box (nos_factor) and litres-per-piece (litre_factor).
 
-    Returns:
-        nos_factor: pieces per Box (from UOM Conversion Detail Nos row)
-        litre_factor: Litre/Kg per piece (from UOM Conversion Detail Litre/Kg row)
+    Handles both conversion-table layouts so it works before and after the
+    Option B migration (maintenance/stock_uom_to_pieces.py):
 
-    LTR is fetched directly from the item conversion table.
-    Total Litre = pcs x litre_factor.
+    Option B (piece-based, Nos anchor)   Legacy (box-based)
+      stock_uom = Nos                      stock_uom = Box
+      Nos  cf = 1                          Box  cf = 1
+      Box  cf = P  <- pieces per box       Nos  cf = P  <- pieces per box
+
+    In both layouts P is the factor of whichever of {Box, Nos} is NOT the stock
+    UOM, so derive it from the pair rather than hardcoding one row.
+
+    litre_factor is always read straight from the Litre (or Kg) row, which holds
+    "litres per piece". That row is intentionally left untouched by the migration
+    (see that module's docstring), so this is layout-independent.
     """
-    uoms = frappe.get_all(
-        "UOM Conversion Detail",
-        filters={"parent": item_code, "uom": ["in", ["Nos", "Litre", "Kg"]]},
-        fields=["uom", "conversion_factor"],
-    )
-    nos_factor = 1
-    litre_factor = 0
-    for u in uoms:
-        if u.uom == "Nos":
-            nos_factor = u.conversion_factor or 1
-        elif u.uom in ("Litre", "Kg"):
-            litre_factor = u.conversion_factor or 0
+    item = frappe.get_cached_doc("Item", item_code)
+    uom_map = {u.uom: flt(u.conversion_factor or 0) for u in (item.uoms or [])}
+    stock_uom = item.stock_uom
 
-    item = frappe.get_doc("Item", item_code)
+    nos_cf = uom_map.get("Nos", 0)
+    box_cf = uom_map.get("Box", 0)
+
+    non_stock_cf = box_cf if stock_uom == "Nos" else nos_cf
+    pcs_per_box = non_stock_cf if non_stock_cf >= 1 else 1
+
+    litre_per_piece = uom_map.get("Litre", 0) or uom_map.get("Kg", 0)
+    if litre_per_piece < 0:
+        litre_per_piece = 0
+
     return {
-        "nos_factor": nos_factor,
-        "litre_factor": litre_factor,
-        "stock_uom": item.stock_uom,
+        "nos_factor": pcs_per_box,
+        "litre_factor": litre_per_piece,
+        "stock_uom": stock_uom,
     }
+
+
+def get_invoice_uom(item_code):
+    """Return the UOM a transaction row must be booked in, derived from the Item.
+
+    Fast Entry always books transactions in individual pieces and relies on
+    ERPNext's own invariant that a stock UOM always has conversion_factor 1
+    (see erpnext.controllers.transaction_base.validate_conversion_factor).
+    That invariant is why stock_qty == qty for these rows.
+
+    So the correct UOM is simply the item's own stock_uom -- it is read from the
+    master rather than hardcoded, and the factor is derived from that same row.
+
+    A stock UOM other than "Nos" means the master is still piece-in-a-box (i.e.
+    the Option B migration has not been run). Booking pieces in that UOM would
+    understate stock by the pack size, so fail loudly and point at the migration
+    rather than silently corrupting quantities.
+    """
+    item = frappe.get_cached_doc("Item", item_code)
+    stock_uom = item.stock_uom
+
+    if not stock_uom:
+        frappe.throw(
+            _("Item {0} has no Stock UOM set.").format(item_code),
+            title=_("Cannot Create Entry"),
+        )
+
+    if stock_uom != PIECE_UOM:
+        frappe.throw(
+            _(
+                "Item {0} is stocked in {1}, but Fast Entry books entries in {2} "
+                "per piece. Running it in {1} would record {2} pieces as {1} units. "
+                "Run the Option B migration for this site first: "
+                "bench --site {3} execute "
+                "fast_entry_app.maintenance.stock_uom_to_pieces.execute --kwargs "
+                "'{{\"dry_run\": false}}'"
+            ).format(item_code, stock_uom, PIECE_UOM, frappe.local.site),
+            title=_("Stock UOM Not Migrated"),
+        )
+
+    uom_row = next((u for u in (item.uoms or []) if u.uom == stock_uom), None)
+    conversion_factor = flt(uom_row.conversion_factor) if uom_row else 1.0
+    if not conversion_factor:
+        # The anchor row is missing; ERPNext would reject this at validate time
+        # anyway, so surface the real cause here instead.
+        conversion_factor = 1.0
+
+    return {"uom": stock_uom, "conversion_factor": conversion_factor}
 
 
 @frappe.whitelist()
