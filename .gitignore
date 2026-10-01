@@ -5,3 +5,12 @@ reference/
 # python bytecode
 __pycache__/
 *.pyc
+
+# REAL master data bundles. These contain live customer GSTINs, contact phone
+# numbers and street addresses. Only the anonymised bundle may be committed.
+# The app package is nested one level deep, so these patterns are anchored
+# with **/ rather than written relative to the repo root.
+**/master_data_export.json
+**/master_data_seed_backup.json
+**/master_data/bundles/*.json
+!**/master_data/bundles/geeta_anonymised.json
