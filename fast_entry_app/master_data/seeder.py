@@ -102,6 +102,13 @@ PHASES = [
 
 SAVEPOINT = "master_data_seed"
 
+# Bundles committed to the app, in resolution order. ``geeta_reference.json`` is
+# the verbatim Geeta master data (real party/contact/address names), which is
+# what a fresh site should load. ``geeta_anonymised.json`` keeps the same
+# structure with every identifying value replaced, for anyone who must not ship
+# the reference names.
+REFERENCE_BUNDLES = ("geeta_reference.json", "geeta_anonymised.json")
+
 # Self-referential parent link on each tree doctype. Children are exported
 # before their root (single-doctype trees have no dedicated phase ordering), so
 # `seed()` re-orders each doctype parent-first to keep both the link pre-check
@@ -118,8 +125,13 @@ PARENT_FIELD = {
 def resolve_bundle_path(bundle_path=None):
 	"""Locate the bundle to load.
 
-	Defaults to the anonymised bundle committed to the repo. A real export is
-	never in git -- pass its path explicitly, or copy it to
+	Defaults to the verbatim ``geeta_reference.json`` committed to the repo, so a
+	fresh site receives the *same* customers, suppliers, addresses and contacts
+	by name. ``geeta_anonymised.json`` is the fallback: identical structure, but
+	party/contact/address names replaced with ``Customer 001``-style labels for
+	situations where the reference data must not be redistributed.
+
+	A live export is never in git -- pass its path explicitly, or copy it to
 	``sites/<site>/private/files/master_data_export.json`` which is what
 	:func:`fast_entry_app.master_data.export.export_bundle` writes.
 	"""
@@ -130,17 +142,19 @@ def resolve_bundle_path(bundle_path=None):
 			frappe.throw(f"Bundle not found: {bundle_path}")
 		return bundle_path
 
-	committed = frappe.get_app_path("fast_entry_app", "master_data", "bundles", "geeta_anonymised.json")
-	if os.path.exists(committed):
-		return committed
+	for filename in REFERENCE_BUNDLES:
+		committed = frappe.get_app_path("fast_entry_app", "master_data", "bundles", filename)
+		if os.path.exists(committed):
+			return committed
 
 	fallback = frappe.get_site_path("private", "files", "master_data_export.json")
 	if os.path.exists(fallback):
 		return fallback
 
 	frappe.throw(
-		"No master data bundle found. Expected "
-		f"{committed}, or a bundle at {fallback}. Generate one with "
+		"No master data bundle found. Expected one of "
+		f"{', '.join(REFERENCE_BUNDLES)} in the app's master_data/bundles folder, or a "
+		f"bundle at {fallback}. Generate one with "
 		"fast_entry_app.master_data.export.export_bundle."
 	)
 
@@ -225,7 +239,38 @@ def _clean_record(doctype, record):
 	return doc
 
 
-def _exists(doctype, name):
+# Doctypes whose ``name`` is a *server-generated random token* rather than a
+# stable business key. Frappe hashes these on every insert, so the name that a
+# bundle exported from another site can never match what the target site mints
+# (Item Price -> "hejdogtnkv" on one site, "47r4mu5nnv" on another). Matching on
+# name therefore always reports "missing", and the re-insert then trips the
+# ERPNext uniqueness check ("Item Price appears multiple times based on Price
+# List, Supplier/Customer, Currency, Item, Batch, UOM, Qty, and Dates").
+#
+# For these, identity is the *business* key, so probe on that instead. This is
+# what makes a second seeding run idempotent.
+_IDENTITY_KEYS = {
+	"Item Price": ("item_code", "price_list", "selling", "buying", "currency", "uom"),
+}
+
+
+def _exists(doctype, name, record=None):
+	"""True when this bundle record is already on the site.
+
+	Uses the record's business identity for doctypes with server-generated
+	names (see :data:`_IDENTITY_KEYS`) and the document name for everything
+	else. ``record`` is optional so existing callers keep working.
+	"""
+	if doctype in _IDENTITY_KEYS and record:
+		filters = {}
+		for fieldname in _IDENTITY_KEYS[doctype]:
+			value = record.get(fieldname)
+			if value in (None, ""):
+				continue
+			filters[fieldname] = value
+		if filters:
+			return bool(frappe.db.exists(doctype, filters))
+
 	return bool(name) and bool(frappe.db.exists(doctype, name))
 
 
@@ -385,7 +430,7 @@ def seed(bundle_path=None, dry_run=True, only=None, company=None):
 def _seed_one(doctype, record, dry_run, known):
 	"""Return ``(status, reason)`` where status is created | skipped | failed."""
 	name = record.get("name")
-	if _exists(doctype, name) or (doctype, name) in known:
+	if _exists(doctype, name, record) or (doctype, name) in known:
 		known.add((doctype, name))
 		return "skipped", None
 

@@ -143,3 +143,38 @@
 }
 .fsr-ms-option:hover { background: #f9fafb; }
 .fsr-ms-option input[type="checkbox"] { margin: 0; accent-color: #5e64ff; }
+
+/* ------------------------------------------------------------------
+   Company badges (All Companies view)
+   Each company gets a stable hue derived from its abbreviation, so the
+   same company is always the same colour across rows and drill-downs.
+   ------------------------------------------------------------------ */
+.fsr-co-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    line-height: 16px;
+    white-space: nowrap;
+    vertical-align: middle;
+    background: #e5e7eb;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.fsr-wh-stack { line-height: 1.35; }
+.fsr-wh-badges { margin-bottom: 1px; }
+.fsr-wh-badges .fsr-co-badge { margin-right: 3px; }
+.fsr-wh-names { font-size: 11px; color: #6b7280; }
+
+.fsr-bd-badge { display: inline-flex; align-items: center; }
+.fsr-tx-co { white-space: nowrap; }
+
+/* distinct but muted hues, keyed off the company abbreviation */
+.fsr-co-gc   { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+.fsr-co-goc  { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.fsr-co-gge  { background: #dcfce7; color: #14532d; border-color: #bbf7d0; }
+.fsr-co-sa   { background: #fae8ff; color: #701a75; border-color: #f5d0fe; }
+.fsr-co-ggc  { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }

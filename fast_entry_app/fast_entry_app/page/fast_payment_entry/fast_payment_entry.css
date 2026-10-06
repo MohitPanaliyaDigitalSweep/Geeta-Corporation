@@ -2,3 +2,22 @@
 
 .fpe-alloc-label { min-width: 110px; }
 .fpe-alloc-amt { min-width: 90px; }
+/* --- Party Group payment mode ------------------------------------------- */
+
+/* A group row must read as a different kind of thing from a party row, since
+   picking it pays many accounts instead of one. */
+.fe-dropdown-item.fe-dd-group .fe-dd-primary {
+    color: #1d4ed8;
+    font-weight: 700;
+}
+.fe-dropdown-item.fe-dd-group .fe-dd-secondary {
+    color: #1d4ed8;
+    background: #eff6ff;
+}
+
+/* Member column, only present while a group is selected. */
+.fpe-member {
+    font-weight: 600;
+    color: #1d4ed8;
+    white-space: nowrap;
+}

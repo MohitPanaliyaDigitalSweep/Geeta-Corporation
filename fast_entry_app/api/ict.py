@@ -2,6 +2,29 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+# Resolvers shared with the sales/purchase entry APIs so that "Auto (Company
+# Default)" means the same thing on every entry screen. Imported lazily inside
+# the two functions below -- api.sales/api.purchase import api.item, and this
+# module is imported from elsewhere, so keep the module level clean.
+def _default_sales_template(company, gst_type):
+    if not company:
+        return ""
+    try:
+        from fast_entry_app.api.sales import _get_sales_tax_template
+        return _get_sales_tax_template(company, gst_type) or ""
+    except Exception:
+        return ""
+
+
+def _default_purchase_template(company, gst_type):
+    if not company:
+        return ""
+    try:
+        from fast_entry_app.api.purchase import _get_tax_template
+        return _get_tax_template(company, gst_type) or ""
+    except Exception:
+        return ""
+
 
 @frappe.whitelist()
 def create_inter_company_transfer(data):
@@ -19,10 +42,23 @@ def create_inter_company_transfer(data):
     doc.to_company = data["to_company"]
     doc.posting_date = data.get("posting_date") or frappe.utils.today()
     doc.remarks = data.get("remarks", "")
-    if data.get("sales_tax_template"):
-        doc.sales_tax_template = data["sales_tax_template"]
-    if data.get("purchase_tax_template"):
-        doc.purchase_tax_template = data["purchase_tax_template"]
+
+    # "Auto (Company Default)" arrives as an empty string. Resolve it here so
+    # the six generated documents (SO/PO/DN/PR/SI/PI) actually get tax rows --
+    # their guards only fire when these fields are non-empty, and ERPNext's own
+    # set_taxes() fallback cannot help (no template is flagged is_default and
+    # Accounts Settings.add_taxes_from_taxes_and_charges_template is off).
+    # Sales docs are on the source company, purchase docs on the target.
+    gst_type = (data.get("gst_type") or "intra").lower()
+    sales_template = data.get("sales_tax_template") or ""
+    purchase_template = data.get("purchase_tax_template") or ""
+    if not sales_template:
+        sales_template = _default_sales_template(data["company"], gst_type)
+    if not purchase_template:
+        purchase_template = _default_purchase_template(data["to_company"], gst_type)
+
+    doc.sales_tax_template = sales_template
+    doc.purchase_tax_template = purchase_template
 
     for item_data in data.get("items", []):
         item_code = str(item_data.get("item_code", "")).strip()
@@ -436,22 +472,35 @@ def get_tax_templates_with_details():
 
 
 @frappe.whitelist()
-def calculate_tax_preview(items_json, template_name, tax_type="sales"):
+def calculate_tax_preview(items_json, template_name, tax_type="sales", company=None, gst_type="intra"):
     """Calculate tax amounts for given items and template.
 
     Args:
         items_json: JSON string of items [{item_code, pcs, rate, amount}, ...]
-        template_name: Name of the tax template
+        template_name: Name of the tax template. Empty means "Auto (Company
+            Default)" -- resolved against `company` when one is given.
         tax_type: "sales" or "purchase"
+        company: Company to resolve an empty template_name against (sales leg
+            passes the source company, purchase leg the target company).
+        gst_type: "intra" or "inter", selects In-state / Out-state template.
 
     Returns:
-        {net_total, tax_rows: [{account_head, rate, amount}], total_tax, grand_total}
+        {net_total, tax_rows: [...], total_tax, grand_total, resolved_template}
+        `resolved_template` is the template actually used, so the UI can say
+        which one produced the rows when the operator left it on Auto.
     """
     import json
     if isinstance(items_json, str):
         items = json.loads(items_json)
     else:
         items = items_json
+
+    if not template_name and company:
+        template_name = (
+            _default_sales_template(company, gst_type)
+            if tax_type == "sales"
+            else _default_purchase_template(company, gst_type)
+        )
 
     tax_doctype = "Sales Taxes and Charges Template" if tax_type == "sales" else "Purchase Taxes and Charges Template"
 
@@ -481,4 +530,5 @@ def calculate_tax_preview(items_json, template_name, tax_type="sales"):
         "tax_rows": taxes,
         "total_tax": total_tax,
         "grand_total": net_total + total_tax,
+        "resolved_template": template_name or "",
     }

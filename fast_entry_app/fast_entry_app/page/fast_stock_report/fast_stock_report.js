@@ -29,7 +29,7 @@ fast_entry_app.StockReport = class StockReport {
         return `<div class="fast-entry-container fsr-container">
             <div class="fe-header-section">
                 <div class="fe-header-row">
-                    <div class="fe-field" style="flex:0 0 320px;"><label>Company <span class="reqd">*</span></label>
+                    <div class="fe-field" style="flex:0 0 320px;"><label>Company</label>
                         <select class="fe-input" id="fsr-company"><option value="">Select Company</option></select>
                     </div>
                     <div class="fe-field"><label>Warehouse</label><select class="fe-input" id="fsr-warehouse"><option value="">All Warehouses</option></select></div>
@@ -46,12 +46,11 @@ fast_entry_app.StockReport = class StockReport {
                             <th class="fsr-col-expand"></th>
                             <th>Item Code</th>
                             <th>Item Name</th>
-                            <th>Warehouse</th>
+                            <th id="fsr-wh-head">Warehouse</th>
+                            <th class="fsr-num">Nos (Pcs)</th>
                             <th class="fsr-num">Box</th>
-                            <th class="fsr-num">Pcs</th>
-                            <th class="fsr-num">Total Ltr</th>
+                            <th class="fsr-num">LTR</th>
                             <th class="fsr-num">Valuation Rate</th>
-                            <th class="fsr-num">Avg Value (Rs)</th>
                             <th class="fsr-num">Stock Value (Rs)</th>
                         </tr></thead>
                         <tbody id="fsr-summary-body"></tbody>
@@ -76,6 +75,7 @@ fast_entry_app.StockReport = class StockReport {
                 <div id="fsr-tx-wrap" style="overflow-x:auto;">
                     <table class="fsr-table" id="fsr-tx-table">
                         <thead><tr>
+                            <th id="fsr-tx-co-head" style="display:none;">Company</th>
                             <th>Date</th>
                             <th>Voucher Type</th>
                             <th>Voucher No</th>
@@ -110,14 +110,19 @@ fast_entry_app.StockReport = class StockReport {
 
         this.$company.on("change", () => {
             localStorage.setItem("fsr_company", this.$company.val());
+            this.hide_transactions();
             this.load_warehouses();
             this.load_stock();
         });
         this.$warehouse.on("change", () => {
             localStorage.setItem("fsr_warehouse", this.$warehouse.val());
+            this.hide_transactions();
             this.load_stock();
         });
-        this.$root.find("#fsr-load").on("click", () => this.load_stock());
+        this.$root.find("#fsr-load").on("click", () => {
+            this.hide_transactions();
+            this.load_stock();
+        });
         this.$root.find("#fsr-tx-refresh").on("click", () => this.load_transactions());
         this.$root.find("#fsr-tx-back").on("click", () => this.hide_transactions());
 
@@ -186,18 +191,54 @@ fast_entry_app.StockReport = class StockReport {
 
     load_companies() {
         const self = this;
-        frappe.call({ method: "frappe.client.get_list", args: { doctype: "Company", filters: {}, fields: ["name"], limit_page_length: 100 },
+        frappe.call({ method: "frappe.client.get_list", args: { doctype: "Company", filters: {}, fields: ["name", "abbr"], limit_page_length: 100 },
             callback: function(r) {
                 const companies = r.message || [];
+                self.companies = companies;
+                self.company_abbr = {};
+                companies.forEach(c => { self.company_abbr[c.name] = c.abbr || ""; });
+
+                // "All Companies" is the default view: every company's stock in
+                // one place, each row badged with its owning company.
+                self.$company.append('<option value="__all__">All Companies</option>');
                 companies.forEach(c => self.$company.append(`<option value="${c.name}">${c.name}</option>`));
+
                 const ls = localStorage.getItem("fsr_company");
-                if (ls && companies.find(c => c.name === ls)) {
+                // remember the last company, but fall back to All Companies
+                if (ls === "__all__" || !ls || !companies.find(c => c.name === ls)) {
+                    self.$company.val("__all__");
+                } else {
                     self.$company.val(ls);
-                    self.load_warehouses();
-                    self.load_stock();
                 }
+                self.load_warehouses();
+                self.load_stock();
             }
         });
+    }
+
+    is_all_companies() { return this.$company.val() === "__all__"; }
+
+    esc(v) { return frappe.utils.escape_html(v == null ? "" : String(v)); }
+
+    // Box and LTR are computed from the piece balance, so hovering must show
+    // the pack being applied rather than letting the number look like storage.
+    factor_tip(r) {
+        const f = this.flt(r.box_factor);
+        if (!f) return 'title="No Box conversion for this item - boxes not applicable"';
+        return `title="${this.fmt_int(f)} Nos per Box"`;
+    }
+
+    litre_tip(r) {
+        const f = this.flt(r.litre_per_piece);
+        if (!f) return 'title="No Litre conversion for this item"';
+        return `title="${this.fmt(f)} Litre per piece"`;
+    }
+
+    company_badge(company) {
+        if (!company) return "";
+        const abbr = (this.company_abbr || {})[company] || company;
+        const cls = "fsr-co-" + String(abbr).toLowerCase().replace(/[^a-z0-9]/g, "");
+        return `<span class="fsr-co-badge ${cls}" title="${this.esc(company)}">${this.esc(abbr)}</span>`;
     }
 
     load_warehouses() {
@@ -207,7 +248,7 @@ fast_entry_app.StockReport = class StockReport {
         if (!company) return;
         frappe.call({ method: "fast_entry_app.api.stock_report.get_warehouses", args: { company: company },
             callback: function(r) {
-                (r.message || []).forEach(w => self.$warehouse.append(`<option value="${w.name}">${w.warehouse_name || w.name}</option>`));
+                (r.message || []).forEach(w => self.$warehouse.append(`<option value="${w.name}">${self.esc(w.label || w.warehouse_name || w.name)}</option>`));
                 const ls = localStorage.getItem("fsr_warehouse");
                 if (ls && (r.message || []).find(w => w.name === ls)) self.$warehouse.val(ls);
             }
@@ -220,16 +261,17 @@ fast_entry_app.StockReport = class StockReport {
         const self = this;
         const search_val = search || this.$item_search.val();
         const warehouse = this.$warehouse.val();
-        this.$summary_body.html(`<tr><td colspan="10" style="text-align:center;padding:20px;color:#9ca3af;"><i class="fa fa-spinner fa-spin"></i> Loading stock...</td></tr>`);
+        this.$summary_body.html(`<tr><td colspan="9" style="text-align:center;padding:20px;color:#9ca3af;"><i class="fa fa-spinner fa-spin"></i> Loading stock...</td></tr>`);
         frappe.call({ method: "fast_entry_app.api.stock_report.get_stock_summary", args: { company: company, warehouse: warehouse, search: search_val },
             callback: function(r) {
                 const data = r.message || {};
                 self.rows = data.rows || [];
                 self.breakdown = data.breakdown || {};
+                self.all_companies = !!data.all_companies;
                 self.render_summary(search_val);
             },
             error: function() {
-                self.$summary_body.html(`<tr><td colspan="10" style="text-align:center;padding:20px;color:#ef4444;">Failed to load stock.</td></tr>`);
+                self.$summary_body.html(`<tr><td colspan="9" style="text-align:center;padding:20px;color:#ef4444;">Failed to load stock.</td></tr>`);
             }
         });
     }
@@ -243,41 +285,60 @@ fast_entry_app.StockReport = class StockReport {
             return;
         }
         this.$summary_empty.hide();
-        const total_box = this.rows.reduce((s, r) => s + this.flt(r.total_box), 0);
-        const total_value = this.rows.reduce((s, r) => s + this.flt(r.stock_value), 0);
-        this.$root.find("#fsr-summary-sub").text(`${this.rows.length} items | Total Box: ${this.fmt_int(total_box)} | Total Value: Rs. ${this.fmt(total_value)}`);
+        const sum = (f) => this.rows.reduce((s, r) => s + this.flt(r[f]), 0);
+        const total_nos = sum("qty_nos");
+        const total_box = sum("qty_box");
+        const total_ltr = sum("qty_ltr");
+        const total_value = sum("stock_value");
+        const co_count = this.rows.reduce((s, r) => s + ((r.companies || []).length), 0);
+        const sub = `${this.rows.length} items | ${this.fmt_int(total_nos)} Nos | ${this.fmt_int(total_box)} Box | ${this.fmt(total_ltr)} LTR | Total Value: Rs. ${this.fmt(total_value)}`;
+        this.$root.find("#fsr-summary-sub").text(this.all_companies ? `${sub} | across ${co_count} company/item holdings` : sub);
 
         const single_wh = this.$warehouse.val() ? true : false;
+        // In the All Companies view the Warehouse column leads with a company
+        // badge so it is obvious who owns each line.
+        const show_badge = !!this.all_companies;
+        this.$root.find("#fsr-wh-head").text(show_badge ? "Company / Warehouse" : "Warehouse");
+
+        const wh_cell = function(companies, bd_rows) {
+            if (show_badge) {
+                const badges = (companies || []).map(c => self.company_badge(c)).join(" ");
+                const names = bd_rows.map(b => (b.warehouse || "").split(" - ")[0]).join(", ");
+                return `<div class="fsr-wh-stack"><div class="fsr-wh-badges">${badges}</div><div class="fsr-wh-names">${self.esc(names)}</div></div>`;
+            }
+            const names = bd_rows.map(b => (b.warehouse || "").split(" - ")[0]).join(", ");
+            return `<span style="font-size:11px;color:#6b7280;">${self.esc(names)}</span>`;
+        };
+
         this.rows.forEach(function(r) {
-            const box = self.flt(r.total_box);
-            const box_color = box > 0 ? "#059669" : box < 0 ? "#dc2626" : "#9ca3af";
+            const nos = self.flt(r.qty_nos);
+            const nos_color = nos > 0 ? "#059669" : nos < 0 ? "#dc2626" : "#9ca3af";
             const bd_rows = self.breakdown[r.item_code] || [];
             const has_breakdown = bd_rows.length > 1 || (bd_rows.length === 1 && !single_wh);
-            const wh_names = bd_rows.map(b => b.warehouse.split(" - ")[0]).join(", ") || "";
             const tr = document.createElement("tr");
             tr.className = "fsr-row" + (has_breakdown ? " fsr-expandable" : "");
             tr.dataset.code = r.item_code;
             tr.dataset.name = r.item_name;
             tr.innerHTML = `
                 <td class="fsr-col-expand">${has_breakdown ? '<i class="fa fa-chevron-right fsr-chevron"></i>' : ""}</td>
-                <td class="fsr-code">${r.item_code}</td>
-                <td class="fsr-name">${r.item_name || ""}</td>
-                <td style="font-size:11px;color:#6b7280;">${wh_names}</td>
-                <td class="fsr-num" style="font-weight:700;color:${box_color};">${self.fmt_int(box)}</td>
-                <td class="fsr-num">${self.fmt_int(r.total_pcs)}</td>
-                <td class="fsr-num">${self.fmt(r.total_ltr)}</td>
-                <td class="fsr-num">${self.fmt(r.actual_qty ? (self.flt(r.stock_value) / self.flt(r.actual_qty)) : 0)}</td>
-                <td class="fsr-num">${self.flt(r.total_pcs) ? self.fmt(self.flt(r.stock_value) / self.flt(r.total_pcs)) : '0.00'}</td>
+                <td class="fsr-code">${self.esc(r.item_code)}</td>
+                <td class="fsr-name">${self.esc(r.item_name || "")}</td>
+                <td>${wh_cell(r.companies, bd_rows)}</td>
+                <td class="fsr-num" style="font-weight:700;color:${nos_color};">${self.fmt_int(nos)}</td>
+                <td class="fsr-num" ${self.factor_tip(r)}>${self.fmt(r.qty_box)}</td>
+                <td class="fsr-num" ${self.litre_tip(r)}>${self.fmt(r.qty_ltr)}</td>
+                <td class="fsr-num">${nos ? self.fmt(self.flt(r.stock_value) / nos) : '0.00'}</td>
                 <td class="fsr-num" style="font-weight:700;">${self.fmt(r.stock_value)}</td>`;
             if (has_breakdown) {
                 self.$summary_body[0].appendChild(tr);
                 bd_rows.forEach(bd => {
                     const sv = self.flt(bd.stock_value);
-                    const aq = self.flt(bd.actual_qty);
-                    const pcs = self.flt(bd.total_pcs);
-                    const vrate = aq ? sv / aq : 0;
-                    const avg = pcs ? sv / pcs : 0;
-                    const short_wh = bd.warehouse.split(" - ")[0] || bd.warehouse;
+                    const nos = self.flt(bd.qty_nos);
+                    const vrate = nos ? sv / nos : 0;
+                    const short_wh = (bd.warehouse || "").split(" - ")[0] || bd.warehouse;
+                    const bd_wh = show_badge
+                        ? `<span class="fsr-bd-badge">${self.company_badge(bd.company)}</span><span style="padding-left:4px;">${self.esc(short_wh)}</span>`
+                        : self.esc(short_wh);
                     const bd_tr = document.createElement("tr");
                     bd_tr.className = "fsr-breakdown";
                     bd_tr.style.display = "none";
@@ -285,12 +346,11 @@ fast_entry_app.StockReport = class StockReport {
                         <td></td>
                         <td></td>
                         <td></td>
-                        <td style="font-size:11px;color:#6b7280;padding-left:16px;">${short_wh}</td>
-                        <td class="fsr-num">${self.fmt_int(bd.total_box)}</td>
-                        <td class="fsr-num">${self.fmt_int(pcs)}</td>
-                        <td class="fsr-num">${self.fmt(bd.total_ltr)}</td>
+                        <td style="font-size:11px;color:#6b7280;padding-left:16px;">${bd_wh}</td>
+                        <td class="fsr-num">${self.fmt_int(nos)}</td>
+                        <td class="fsr-num" ${self.factor_tip(bd)}>${self.fmt(bd.qty_box)}</td>
+                        <td class="fsr-num" ${self.litre_tip(bd)}>${self.fmt(bd.qty_ltr)}</td>
                         <td class="fsr-num">${self.fmt(vrate)}</td>
-                        <td class="fsr-num">${self.fmt(avg)}</td>
                         <td class="fsr-num">${self.fmt(sv)}</td>`;
                     self.$summary_body[0].appendChild(bd_tr);
                 });
@@ -327,12 +387,10 @@ fast_entry_app.StockReport = class StockReport {
         let h = '<table class="fsr-bd-table"><tbody>';
         rows.forEach(r => {
             const sv = this.flt(r.stock_value);
-            const aq = this.flt(r.actual_qty);
-            const pcs = this.flt(r.total_pcs);
-            const vrate = aq ? sv / aq : 0;
-            const avg = pcs ? sv / pcs : 0;
+            const nos = this.flt(r.qty_nos);
+            const vrate = nos ? sv / nos : 0;
             const short_wh = r.warehouse.split(" - ")[0] || r.warehouse;
-            h += `<tr><td></td><td></td><td></td><td>${short_wh}</td><td class="fsr-num">${this.fmt_int(r.total_box)}</td><td class="fsr-num">${this.fmt_int(pcs)}</td><td class="fsr-num">${this.fmt(r.total_ltr)}</td><td class="fsr-num">${this.fmt(vrate)}</td><td class="fsr-num">${this.fmt(avg)}</td><td class="fsr-num">${this.fmt(sv)}</td></tr>`;
+            h += `<tr><td></td><td></td><td></td><td>${short_wh}</td><td class="fsr-num">${this.fmt_int(nos)}</td><td class="fsr-num">${this.fmt(r.qty_box)}</td><td class="fsr-num">${this.fmt(r.qty_ltr)}</td><td class="fsr-num">${this.fmt(vrate)}</td><td class="fsr-num">${this.fmt(sv)}</td></tr>`;
         });
         h += '</tbody></table>';
         return h;
@@ -349,7 +407,7 @@ fast_entry_app.StockReport = class StockReport {
         const wh = this.$warehouse.val();
         frappe.call({ method: "fast_entry_app.api.stock_report.get_warehouses", args: { company: this.get_selected_companies() },
             callback: function(r) {
-                (r.message || []).forEach(w => self.$tx_warehouse.append(`<option value="${w.name}">${w.warehouse_name || w.name}</option>`));
+                (r.message || []).forEach(w => self.$tx_warehouse.append(`<option value="${w.name}">${self.esc(w.label || w.warehouse_name || w.name)}</option>`));
                 if (wh) self.$tx_warehouse.val(wh);
                 self.load_transactions();
             }
@@ -369,6 +427,7 @@ fast_entry_app.StockReport = class StockReport {
                 warehouse: this.$tx_warehouse.val() || "",
                 from_date: this.$tx_from.val() || "",
                 to_date: this.$tx_to.val() || "",
+                company: this.get_selected_companies() || "",
             },
             callback: function(r) {
                 const rows = r.message || [];
@@ -390,6 +449,9 @@ fast_entry_app.StockReport = class StockReport {
         this.$root.find("#fsr-tx-empty").hide();
         const self = this;
         let total_in = 0, total_out = 0;
+        // in the All Companies view a Company column makes the drill-down
+        // self-explanatory -- the same item moves in several companies
+        this.$root.find("#fsr-tx-co-head").toggle(!!this.all_companies);
         rows.forEach(function(r) {
             const qty = self.flt(r.actual_qty);
             const in_qty = qty > 0 ? qty : "";
@@ -399,13 +461,16 @@ fast_entry_app.StockReport = class StockReport {
             const bal_color = bal > 0 ? "#059669" : bal < 0 ? "#dc2626" : "#9ca3af";
             const vtype = r.voucher_type || "";
             const vname = r.voucher_no || "";
-            const link = vtype && vname ? `<a href="/app/${vtype.toLowerCase().replace(/ /g, "-")}/${vname}" target="_blank">${vname}</a>` : (vname || "");
+            const link = vtype && vname ? `<a href="/app/${vtype.toLowerCase().replace(/ /g, "-")}/${vname}" target="_blank">${self.esc(vname)}</a>` : (self.esc(vname));
             const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td class="fsr-date">${r.posting_date}</td>
-                <td>${vtype}</td>
+            const co_cell = self.all_companies
+                ? `<td class="fsr-tx-co">${self.company_badge(r.company)}</td>`
+                : "";
+            tr.innerHTML = `${co_cell}
+                <td class="fsr-date">${self.esc(r.posting_date)}</td>
+                <td>${self.esc(vtype)}</td>
                 <td>${link}</td>
-                <td class="fsr-wh">${r.warehouse || ""}</td>
+                <td class="fsr-wh">${self.esc(r.warehouse || "")}</td>
                 <td class="fsr-num" style="color:#059669;font-weight:600;">${in_qty === "" ? "" : self.fmt_int(in_qty)}</td>
                 <td class="fsr-num" style="color:#dc2626;font-weight:600;">${out_qty === "" ? "" : self.fmt_int(out_qty)}</td>
                 <td class="fsr-num" style="font-weight:700;color:${bal_color};">${self.fmt_int(bal)}</td>
@@ -414,7 +479,8 @@ fast_entry_app.StockReport = class StockReport {
             self.$tx_body[0].appendChild(tr);
         });
         this.$tx_total.html(`<tr style="background:#f9fafb;border-top:2px solid #e5e7eb;">
-            <td colspan="4" style="padding:8px 10px;font-weight:700;color:#374151;">Totals</td>
+            ${this.all_companies ? "<td></td>" : ""}
+            <td colspan="${this.all_companies ? 4 : 4}" style="padding:8px 10px;font-weight:700;color:#374151;">Totals</td>
             <td class="fsr-num" style="padding:8px 10px;font-weight:700;color:#059669;">${this.fmt_int(total_in)}</td>
             <td class="fsr-num" style="padding:8px 10px;font-weight:700;color:#dc2626;">${this.fmt_int(total_out)}</td>
             <td colspan="3"></td></tr>`);

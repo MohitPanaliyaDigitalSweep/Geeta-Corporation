@@ -1,12 +1,12 @@
 frappe.provide("fast_entry_app");
 fast_entry_app._uom_cache = {};
 
-fast_entry_app.load_uom = function(frm, cdt, cdn) {
+fast_entry_app.load_uom = function(frm, cdt, cdn, source) {
     var row = locals[cdt][cdn];
     if (!row.item_code) return;
 
     if (fast_entry_app._uom_cache[row.item_code]) {
-        fast_entry_app.calc_row(frm, cdt, cdn);
+        fast_entry_app.calc_row(frm, cdt, cdn, source);
         return;
     }
 
@@ -16,48 +16,95 @@ fast_entry_app.load_uom = function(frm, cdt, cdn) {
         callback: function(r) {
             if (r && r.message) {
                 fast_entry_app._uom_cache[row.item_code] = r.message;
-                fast_entry_app.calc_row(frm, cdt, cdn);
+                fast_entry_app.calc_row(frm, cdt, cdn, source);
             }
         }
     });
 };
 
-fast_entry_app.calc_row = function(frm, cdt, cdn) {
+fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
     var row = locals[cdt][cdn];
     var uom = fast_entry_app._uom_cache[row.item_code];
     if (!uom) return;
 
-    var box = flt(row.fe_box) || 0;
     var nf = uom.nos_factor || 1;
     var ltr_per_piece = uom.litre_factor || 0;
 
-    var pcs = box * nf;
-    var total_litre = pcs * ltr_per_piece;
+    // Write only real changes: set_value fires ERPNext's UOM/amount handlers,
+    // and gratuitous writes make it recalculate over our values.
+    var set = function(field, value) {
+        value = flt(value) || 0;
+        if (flt(row[field]) !== value) {
+            frappe.model.set_value(cdt, cdn, field, value);
+        }
+    };
 
-    frappe.model.set_value(cdt, cdn, "fe_pcs", pcs);
-    frappe.model.set_value(cdt, cdn, "fe_ltr", ltr_per_piece);
-    frappe.model.set_value(cdt, cdn, "fe_total_ltr", total_litre);
-    frappe.model.set_value(cdt, cdn, "qty", pcs);
-    frappe.model.set_value(cdt, cdn, "uom", "Nos");
+    var box = flt(row.fe_box) || 0;
+    var pcs = flt(row.fe_pcs) || 0;
+
+    if (source === "pcs") {
+        // PCS drives Box back the other way, so both stay independently editable.
+        set("fe_box", nf ? pcs / nf : 0);
+    } else if (source === "box") {
+        set("fe_pcs", box * nf);
+    } else if (!box && !pcs) {
+        // Fresh item pick: seed Box/PCS from the Item master exactly like the
+        // fast entry pages do (one box when the item is packed in a Box).
+        box = uom.has_box ? 1 : 0;
+        set("fe_box", box);
+        set("fe_pcs", box * nf);
+    } else if (!pcs) {
+        set("fe_pcs", box * nf);
+    }
+
+    // UOM/factor come from the Item master, never hardcoded "Nos"/1.0 -- see
+    // get_invoice_uom(). Set before qty: ERPNext recalculates qty when
+    // conversion_factor changes.
+    set("fe_ltr", ltr_per_piece);
+    set("fe_total_ltr", flt(row.fe_pcs || 0) * ltr_per_piece);
+
+    var invoice_uom = uom.invoice_uom || "Nos";
+    if (row.uom !== invoice_uom) {
+        frappe.model.set_value(cdt, cdn, "uom", invoice_uom);
+    }
+    set("conversion_factor", flt(uom.conversion_factor) || 1);
+
+    // qty is pieces: rate is per-PCS and the server books qty = pcs. Written last
+    // so it survives the UOM write above.
+    set("qty", flt(row.fe_pcs) || 0);
 };
 
-frappe.ui.form.on("Purchase Invoice Item", {
-    item_code: function(frm, cdt, cdn) {
-        fast_entry_app.load_uom(frm, cdt, cdn);
-    },
-    fe_box: function(frm, cdt, cdn) {
-        fast_entry_app.load_uom(frm, cdt, cdn);
-    }
-});
+// ---- item row wiring: Box and PCS are both editable and drive each other ----
 
-frappe.ui.form.on("Sales Invoice Item", {
-    item_code: function(frm, cdt, cdn) {
-        fast_entry_app.load_uom(frm, cdt, cdn);
-    },
-    fe_box: function(frm, cdt, cdn) {
-        fast_entry_app.load_uom(frm, cdt, cdn);
-    }
-});
+function _fe_item_handlers() {
+    return {
+        item_code: function(frm, cdt, cdn) {
+            fast_entry_app.load_uom(frm, cdt, cdn, "item");
+        },
+        fe_box: function(frm, cdt, cdn) {
+            fast_entry_app.load_uom(frm, cdt, cdn, "box");
+        },
+        fe_pcs: function(frm, cdt, cdn) {
+            fast_entry_app.load_uom(frm, cdt, cdn, "pcs");
+        }
+    };
+}
+
+frappe.ui.form.on("Purchase Invoice Item", _fe_item_handlers());
+frappe.ui.form.on("Sales Invoice Item", _fe_item_handlers());
+
+// ---- update_stock defaults on, but stays editable ----
+
+function default_update_stock(frm) {
+    // Only seed brand-new documents. Never fight the user on a saved doc, and
+    // never make the field read-only -- service / non-stock invoices must still
+    // be possible.
+    if (!frm.is_new()) return;
+    if (frm.doc.update_stock) return;
+    if (frm.__fe_update_stock_seeded) return;
+    frm.__fe_update_stock_seeded = true;
+    frm.set_value("update_stock", 1);
+}
 
 // --- Send buttons for PI, SI, and Quotation ---
 
@@ -292,12 +339,14 @@ function add_send_buttons(frm) {
 frappe.ui.form.on("Sales Invoice", {
     refresh: function(frm) {
         add_send_buttons(frm);
+        default_update_stock(frm);
     }
 });
 
 frappe.ui.form.on("Purchase Invoice", {
     refresh: function(frm) {
         add_send_buttons(frm);
+        default_update_stock(frm);
     }
 });
 

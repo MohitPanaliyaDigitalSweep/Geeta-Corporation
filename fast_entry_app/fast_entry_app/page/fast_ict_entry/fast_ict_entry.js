@@ -445,25 +445,57 @@ fast_entry_app.ICTEntry = class ICTEntry {
     }
 
     update_tax_preview() {
+        // update_totals() calls this on every keystroke. Each "Auto (Company
+        // Default)" leg now costs a frappe.call (the server resolves it), so
+        // coalesce bursts instead of firing one request per keypress.
+        clearTimeout(this._tax_preview_timer);
+        this._tax_preview_timer = setTimeout(() => this.run_tax_preview(), 300);
+    }
+
+    run_tax_preview() {
         const self = this;
         const items = this.items.filter(r => r.item_code).map(r => ({
             item_code: r.item_code, pcs: r.pcs, rate: r.rate, amount: r.amount
         }));
 
-        const sales_template = this.$sales_tax_template.val() || "";
-        const purchase_template = this.$purchase_tax_template.val() || "";
+        const net_total = items.reduce((s, r) => s + this.flt(r.amount), 0);
+        this.$root.find("#fe-net-total-display").text(net_total.toFixed(2));
 
-        if (!sales_template && !purchase_template) {
-            const net_total = items.reduce((s, r) => s + this.flt(r.amount), 0);
-            this.$root.find("#fe-net-total-display").text(net_total.toFixed(2));
+        if (!items.length) {
             this.$root.find("#fe-tax-total-display").text("0.00");
             this.$root.find("#fe-grand-total").text(net_total.toFixed(2));
-            this.$tax_preview_body.html('<div class="fe-tax-empty">Select a tax template to see tax breakdown</div>');
+            this.$tax_preview_body.html('<div class="fe-tax-empty">Add items to see the tax breakdown</div>');
             this.$tax_preview_subtitle.text("");
             return;
         }
 
-        let pending = 0;
+        const sales_template = this.$sales_tax_template.val() || "";
+        const purchase_template = this.$purchase_tax_template.val() || "";
+        const source_company = this.$source_company.val() || "";
+        const target_company = this.$target_company.val() || "";
+        const gst_type = this.$gst_type.val() || "intra";
+
+        // Run a leg when a template was picked explicitly OR when the company
+        // is known (so the server can resolve the empty selection to that
+        // company's default template). This is what makes "Auto (Company
+        // Default)" actually show tax instead of an empty preview.
+        const legs = [];
+        if (sales_template || source_company) {
+            legs.push({ tax_type: "sales", template_name: sales_template, company: source_company });
+        }
+        if (purchase_template || target_company) {
+            legs.push({ tax_type: "purchase", template_name: purchase_template, company: target_company });
+        }
+
+        if (!legs.length) {
+            this.$root.find("#fe-tax-total-display").text("0.00");
+            this.$root.find("#fe-grand-total").text(net_total.toFixed(2));
+            this.$tax_preview_body.html('<div class="fe-tax-empty">Select source and target company to see the tax breakdown</div>');
+            this.$tax_preview_subtitle.text("");
+            return;
+        }
+
+        let pending = legs.length;
         const results = {};
 
         function render() {
@@ -471,24 +503,20 @@ fast_entry_app.ICTEntry = class ICTEntry {
             self.render_tax_preview_body(results.sales, results.purchase, items);
         }
 
-        if (sales_template) {
-            pending++;
+        legs.forEach(function(leg) {
             frappe.call({
                 method: "fast_entry_app.api.ict.calculate_tax_preview",
-                args: { items_json: JSON.stringify(items), template_name: sales_template, tax_type: "sales" },
-                callback: function(r) { results.sales = r.message; pending--; render(); },
+                args: {
+                    items_json: JSON.stringify(items),
+                    template_name: leg.template_name,
+                    tax_type: leg.tax_type,
+                    company: leg.company,
+                    gst_type: gst_type
+                },
+                callback: function(r) { results[leg.tax_type] = r.message; pending--; render(); },
                 error: function() { pending--; render(); }
             });
-        }
-        if (purchase_template) {
-            pending++;
-            frappe.call({
-                method: "fast_entry_app.api.ict.calculate_tax_preview",
-                args: { items_json: JSON.stringify(items), template_name: purchase_template, tax_type: "purchase" },
-                callback: function(r) { results.purchase = r.message; pending--; render(); },
-                error: function() { pending--; render(); }
-            });
-        }
+        });
     }
 
     render_tax_preview_body(sales_result, purchase_result, items) {
@@ -515,8 +543,13 @@ fast_entry_app.ICTEntry = class ICTEntry {
         this.$root.find("#fe-grand-total").text((net_total + total_tax).toFixed(2));
 
         const parts = [];
-        if (sales_result) parts.push("Sales: " + (sales_result.tax_rows.length) + " rows");
-        if (purchase_result) parts.push("Purchase: " + (purchase_result.tax_rows.length) + " rows");
+        const leg = (label, res) => {
+            if (!res) return;
+            const tpl = res.resolved_template ? " · " + res.resolved_template : "";
+            parts.push(label + tpl + " · " + (res.tax_rows ? res.tax_rows.length : 0) + " rows");
+        };
+        leg("Sales (Source)", sales_result);
+        leg("Purchase (Target)", purchase_result);
         this.$tax_preview_subtitle.text(parts.join(" | "));
     }
 

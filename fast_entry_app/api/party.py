@@ -1,6 +1,8 @@
 import frappe
 from frappe import _
 
+from fast_entry_app.api.party_group import resolve_group
+
 
 @frappe.whitelist()
 def search_suppliers(search=None, company=None, limit=20):
@@ -44,7 +46,20 @@ def search_suppliers(search=None, company=None, limit=20):
             limit_page_length=limit,
             order_by="name asc",
         )
-    return suppliers
+    return _fill_groups(suppliers, "Supplier")
+
+
+def _fill_groups(rows, party_type):
+    """Backfill fe_group from Party Group Party when the Link field is empty.
+
+    The queries above can only read the fe_group column, so a party grouped
+    solely through the Party Group Party child table comes back with no group
+    and the UI shows no group name. resolve_group covers both sources.
+    """
+    for r in rows:
+        if not r.get("fe_group"):
+            r["fe_group"] = resolve_group(party_type, r.get("name"))
+    return rows
 
 
 @frappe.whitelist()
@@ -145,7 +160,7 @@ def search_customers(search=None, company=None, limit=20):
             limit_page_length=limit,
             order_by="name asc",
         )
-    return customers
+    return _fill_groups(customers, "Customer")
 
 
 @frappe.whitelist()

@@ -261,7 +261,7 @@ fast_entry_app.SalesEntry = class SalesEntry {
             args: { doctype: "Company", filters: {}, fields: ["name"], limit_page_length: 100 },
             callback: function(r) {
                 const companies = r.message || [];
-                self.$company.empty().append('<option value="">Select Company</option><option value="All">All Companies</option>');
+                self.$company.empty().append('<option value="">Select Company</option>');
                 companies.forEach(c => self.$company.append(`<option value="${c.name}">${c.name}</option>`));
                 if (companies.length === 1) {
                     self.$company.val(companies[0].name);
@@ -536,52 +536,28 @@ fast_entry_app.SalesEntry = class SalesEntry {
         const company = this.$company.val();
         if (!row.item_code) return;
         if (!company) return;
-        if (company === "All") {
-            frappe.call({
-                method: "fast_entry_app.api.item.get_item_stock_all",
-                args: { item_code: row.item_code },
-                callback: function(r) {
-                    if (!r.message) return;
-                    const m = r.message;
-                    row.all_stock = m.company_stock || [];
-                    row.company_stock = m.total_actual_qty || 0;
-                    row.wh_stock = 0;
-                    self.render_stock(row);
-                },
-            });
-        } else {
-            frappe.call({
-                method: "fast_entry_app.api.item.get_item_stock",
-                args: { item_code: row.item_code, company: company, warehouse: row.warehouse || "" },
-                callback: function(r) {
-                    if (!r.message) return;
-                    const m = r.message;
-                    row.wh_stock = (m.current_stock && m.current_stock.actual_qty) || 0;
-                    row.company_stock = m.total_actual_qty || 0;
-                    row.all_stock = [];
-                    self.render_stock(row);
-                },
-            });
-        }
+        // A sales invoice belongs to exactly one company, so there is no
+        // cross-company mode here by design -- an invoice cannot be raised
+        // against "all companies". Cross-company stock lives in the Stock Report.
+        frappe.call({
+            method: "fast_entry_app.api.item.get_item_stock",
+            args: { item_code: row.item_code, company: company, warehouse: row.warehouse || "" },
+            callback: function(r) {
+                if (!r.message) return;
+                const m = r.message;
+                row.wh_stock = (m.current_stock && m.current_stock.actual_qty) || 0;
+                row.company_stock = m.total_actual_qty || 0;
+                self.render_stock(row);
+            },
+        });
     }
 
     render_stock(row) {
         if (!row._tr) return;
         const $el = $(row._tr).find(".fe-item-stock");
         if (!$el.length) return;
-        const company = this.$company.val();
-        if (company === "All" && row.all_stock && row.all_stock.length) {
-            const by_company = {};
-            row.all_stock.forEach(s => {
-                if (!by_company[s.company]) by_company[s.company] = 0;
-                by_company[s.company] += flt(s.actual_qty);
-            });
-            const parts = Object.keys(by_company).map(c => c + ": " + this.flt(by_company[c]));
-            $el.text("All: " + this.flt(row.company_stock) + " (" + parts.join(" | ") + ")");
-        } else {
-            const wh = row.warehouse || this.$warehouse.val() || "-";
-            $el.text("WH " + wh + ": " + this.flt(row.wh_stock) + " | Company: " + this.flt(row.company_stock));
-        }
+        const wh = row.warehouse || this.$warehouse.val() || "-";
+        $el.text("WH " + wh + ": " + this.flt(row.wh_stock) + " | Company: " + this.flt(row.company_stock));
     }
 
     on_warehouse_change() {

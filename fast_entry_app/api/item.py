@@ -216,8 +216,8 @@ def get_uom_details(item_code, uom):
 
 
 @frappe.whitelist()
-def get_item_uom(item_code):
-    """Get pieces-per-box (nos_factor) and litres-per-piece (litre_factor).
+def _pack_factors_from_uom_map(uom_map, stock_uom):
+    """Pure pack-factor derivation shared by the single and bulk readers.
 
     Handles both conversion-table layouts so it works before and after the
     Option B migration (maintenance/stock_uom_to_pieces.py):
@@ -234,10 +234,6 @@ def get_item_uom(item_code):
     "litres per piece". That row is intentionally left untouched by the migration
     (see that module's docstring), so this is layout-independent.
     """
-    item = frappe.get_cached_doc("Item", item_code)
-    uom_map = {u.uom: flt(u.conversion_factor or 0) for u in (item.uoms or [])}
-    stock_uom = item.stock_uom
-
     nos_cf = uom_map.get("Nos", 0)
     box_cf = uom_map.get("Box", 0)
 
@@ -251,8 +247,67 @@ def get_item_uom(item_code):
     return {
         "nos_factor": pcs_per_box,
         "litre_factor": litre_per_piece,
-        "stock_uom": stock_uom,
+        "has_box": 1 if uom_map.get("Box") else 0,
     }
+
+
+@frappe.whitelist()
+def get_item_uom(item_code):
+    """Get pieces-per-box (nos_factor) and litres-per-piece (litre_factor)."""
+    item = frappe.get_cached_doc("Item", item_code)
+    uom_map = {u.uom: flt(u.conversion_factor or 0) for u in (item.uoms or [])}
+    stock_uom = item.stock_uom
+
+    factors = _pack_factors_from_uom_map(uom_map, stock_uom)
+
+    return {
+        "nos_factor": factors["nos_factor"],
+        "litre_factor": factors["litre_factor"],
+        "stock_uom": stock_uom,
+        # Read, never assumed: the UOM + factor a transaction row must be booked in.
+        # The client writes these instead of hardcoding "Nos"/1.0, which silently
+        # inflated stock by the pack size on any un-migrated (Box-stock) item.
+        "has_box": factors["has_box"],
+        "invoice_uom": stock_uom,
+        "conversion_factor": flt(uom_map.get(stock_uom, 1) or 1),
+    }
+
+
+def get_pack_factors_bulk(item_codes):
+    """Pack factors for many items in one round trip.
+
+    Returns {item_code: {"nos_factor", "litre_factor", "has_box"}}. Same
+    derivation as get_item_uom(); it exists so report-style callers that need a
+    whole item list do not pay one cached-doc read per row.
+    """
+    item_codes = [c for c in (item_codes or []) if c]
+    if not item_codes:
+        return {}
+
+    rows = frappe.db.sql(
+        """
+        SELECT parent AS item_code, uom, conversion_factor
+        FROM `tabUOM Conversion Detail`
+        WHERE parenttype = 'Item' AND parent IN %(items)s
+        """,
+        {"items": item_codes},
+        as_dict=True,
+    )
+
+    maps = {}
+    for r in rows:
+        maps.setdefault(r.item_code, {})[r.uom] = flt(r.conversion_factor or 0)
+
+    stock_uoms = {
+        d.name: d.stock_uom
+        for d in frappe.get_all("Item", filters={"name": ["in", item_codes]}, fields=["name", "stock_uom"])
+    }
+
+    out = {}
+    for code in item_codes:
+        uom_map = maps.get(code, {})
+        out[code] = _pack_factors_from_uom_map(uom_map, stock_uoms.get(code) or "Nos")
+    return out
 
 
 def get_invoice_uom(item_code):
@@ -341,26 +396,51 @@ def get_last_purchase_rate(item_code, supplier=None):
 
 
 def _get_item_gst_rate(item_code, company):
-    """Get GST rate for an item from Item Tax Template."""
+    """GST rate applicable to an item, used by the entry screens' tax preview.
+
+    Order: Item Tax Template row, then the company's own default rate. Falls
+    back to 0 only when neither exists.
+
+    The company fallback matters: sales/purchase/quotation all charge the
+    company's default taxes-and-charges template when no tax override is
+    selected, so without it the screens showed 0.00 CGST/SGST/IGST while the
+    saved document carried real tax. (The previous fallback read
+    `Company.default_gst_rate`, which is not a column in this build.)
+
+    Preview-only: no API computes saved tax from this value.
+    """
     if not company:
         return 0
 
-    # Try Item Tax Template
-    item_tax = frappe.db.get_value(
-        "Item Tax Template Detail",
-        {"parenttype": "Item Tax Template", "tax_type": ["like", "%CGST%"]},
-        ["parent", "tax_rate"],
-        as_dict=True,
-    )
-    if item_tax:
-        return item_tax.tax_rate
+    # Per-item tax template — scoped to THIS item. An unscoped lookup would
+    # match an arbitrary row of any company's Item Tax Template (e.g. "GST 12%".
+    # or "Exempted" from another firm) and return a wrong or zero rate. This
+    # build has no Item.item_tax_template column, so the guard keeps it a
+    # portable no-op here and falls through to the company default.
+    if frappe.db.has_column("Item", "item_tax_template"):
+        item_tax_template = frappe.db.get_value("Item", item_code, "item_tax_template")
+        if item_tax_template:
+            rate = frappe.db.get_value(
+                "Item Tax Template Detail",
+                {"parent": item_tax_template, "tax_type": ["like", "%CGST%"]},
+                "tax_rate",
+            )
+            if rate is not None:
+                # CGST rows carry half the intra-state rate; the preview shows
+                # the total (CGST+SGST), so double it.
+                return flt(rate) * 2
 
-    # Try Company default
-    company_doc = frappe.get_cached_doc("Company", company)
-    if hasattr(company_doc, "default_gst_rate"):
-        return company_doc.default_gst_rate
-
-    return 0
+    # Company default: total GST rate of the company's default tax template.
+    # This is direction-independent (CGST+SGST and IGST are the same rate), so
+    # it is correct for both intra- and inter-state previews; the client
+    # decides how to split it based on the selected GST type.
+    # Lazy import: api.sales imports this module, so a module-level import
+    # here would be circular.
+    try:
+        from fast_entry_app.api.sales import _company_tax_rate
+        return flt(_company_tax_rate(company))
+    except Exception:
+        return 0
 
 
 def _get_default_warehouse(item_code, company):

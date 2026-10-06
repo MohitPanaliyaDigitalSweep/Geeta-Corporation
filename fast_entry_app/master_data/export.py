@@ -167,6 +167,10 @@ EXPORT_PLAN = {
 # that ERPNext uses to record a contact's links.
 LINK_DOCTYPES = ["Contact", "Address"]
 
+# Doctypes whose ``gstin`` is validated (state prefix + PAN + entity + Z +
+# base-36 check digit) on every write, so a bad value would abort a seed.
+GSTIN_DOCTYPES = ["Company", "Customer", "Supplier", "Address"]
+
 
 def _clean(doc, fields, children=None):
 	"""Project a doc down to ``fields`` plus declared child tables."""
@@ -209,6 +213,62 @@ def _export_link_rows(doc):
 	return rows
 
 
+def _repair_gstin(doc, doctype, repaired):
+	"""Fix or drop a GSTIN that would fail validation on the target site.
+
+	A GSTIN can exist on the source site yet be rejected on insert, because
+	india_compliance validates the base-36 check digit on every write. Test and
+	demo data is the usual culprit -- a hand-typed ``27ABCDE1234F1Z5`` passes
+	through the UI but is arithmetically wrong. Such a record makes the whole
+	seed abort (the run is atomic), so repair it here instead.
+
+	The state code and PAN are preserved and only the check digit is
+	recomputed, which keeps the record exercising the same GST code paths.
+	When even that is not possible the GSTIN is cleared and the party is
+	demoted to Unregistered rather than blocking the entire bundle.
+	"""
+	gstin = (doc.get("gstin") or "").strip()
+	if not gstin:
+		return
+
+	from fast_entry_app.master_data.anonymise import CODE_POINTS, make_valid_gstin
+
+	if len(gstin) == 15 and CODE_POINTS.find(gstin[14]) >= 0:
+		base, factor, total = gstin[:14], 1, 0
+		for char in base:
+			digit = factor * CODE_POINTS.find(char)
+			digit = (digit // 36) + (digit % 36)
+			total += digit
+			factor = 2 if factor == 1 else 1
+		expected = CODE_POINTS[(36 - (total % 36)) % 36]
+		if expected == gstin[14]:
+			return
+		fixed = base + expected
+	else:
+		# Wrong shape entirely: keep the state prefix, rebuild a valid tail.
+		pan = gstin[2:12] if len(gstin) >= 12 else ""
+		if not _valid_pan(pan):
+			doc["gstin"] = ""
+			doc["gst_category"] = "Unregistered"
+			repaired.append({"doctype": doctype, "name": doc.get("name"), "from": gstin, "to": ""})
+			return
+		fixed = make_valid_gstin(gstin[:2], pan)
+
+	doc["gstin"] = fixed
+	repaired.append({"doctype": doctype, "name": doc.get("name"), "from": gstin, "to": fixed})
+
+
+def _valid_pan(pan):
+	return (
+		isinstance(pan, str)
+		and len(pan) == 10
+		and pan[:5].isalpha()
+		and pan[4].isalpha()
+		and pan[5:9].isdigit()
+		and pan[9].isalpha()
+	)
+
+
 def export_bundle(bundle_path=None, company=None, doctypes=None, include_disabled=True):
 	"""Write a JSON bundle of business masters from the current site.
 
@@ -220,6 +280,7 @@ def export_bundle(bundle_path=None, company=None, doctypes=None, include_disable
 	"""
 	frappe.only_for(("System Manager",))
 
+	repaired = []
 	plan = EXPORT_PLAN
 	if doctypes:
 		unknown = set(doctypes) - set(EXPORT_PLAN)
@@ -268,6 +329,8 @@ def export_bundle(bundle_path=None, company=None, doctypes=None, include_disable
 					continue
 
 			cleaned = _clean(doc, spec["fields"], spec.get("children"))
+			if doctype in GSTIN_DOCTYPES:
+				_repair_gstin(cleaned, doctype, repaired)
 			if doctype in LINK_DOCTYPES:
 				links = _export_link_rows(doc)
 				if links:
@@ -289,6 +352,7 @@ def export_bundle(bundle_path=None, company=None, doctypes=None, include_disable
 		"counts": bundle["counts"],
 		"total_docs": sum(bundle["counts"].values()),
 		"companies": companies,
+		"gstin_repaired": repaired,
 	}
 
 

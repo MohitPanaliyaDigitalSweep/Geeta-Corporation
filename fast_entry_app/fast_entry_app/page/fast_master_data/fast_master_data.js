@@ -66,6 +66,8 @@ fast_entry_app.MasterDataLoader = class MasterDataLoader {
 					${__("Nothing is ever deleted; existing records are skipped.")}
 				</div>
 
+				<div class="alert alert-info" id="md-anon-note" style="margin-bottom: 16px; display: none;"></div>
+
 				<div class="md-card">
 					<div class="md-card-head"><i class="fa fa-file-code-o"></i> ${__("Bundle")}</div>
 					<div class="md-card-body" id="md-bundle">${__("Loading...")}</div>
@@ -133,6 +135,15 @@ fast_entry_app.MasterDataLoader = class MasterDataLoader {
 
 	render_overview() {
 		const o = this.overview;
+
+		// The reference bundle carries real party/contact/address names. It ships
+		// in a public repo, so say so loudly rather than hiding the flag.
+		$("#md-anon-note").toggle(
+			o.anonymised,
+			`${__("This is the")} <strong>${__("anonymised")}</strong> ${__(
+				"bundle: customer, supplier, contact and address names are replaced with generic labels. Use the reference bundle to load them by name."
+			)}`
+		);
 
 		this.$("#md-bundle").html(`
 			<div><strong>${__("File")}:</strong> <code>${this.esc(o.bundle_path)}</code></div>

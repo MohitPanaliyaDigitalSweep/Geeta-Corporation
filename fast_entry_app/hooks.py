@@ -48,6 +48,14 @@ doctype_js = {
     "Quotation": "public/js/erpnext_pi_override.js",
 }
 
+# Splice the Fast Entry Box / Pcs / Ltr pack-UOM columns into the standard
+# "Stock Balance" query report. The report view calls this whitelisted entry
+# point; the override runs the original unchanged and augments its result
+# (fast_entry_app.api.stock_report.override_query_report_run).
+override_whitelisted_methods = {
+    "frappe.desk.query_report.run": "fast_entry_app.api.stock_report.override_query_report_run",
+}
+
 
 
 # Fixtures

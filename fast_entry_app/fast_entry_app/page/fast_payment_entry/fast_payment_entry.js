@@ -15,6 +15,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
 
     flt(v) { return parseFloat(v) || 0; }
     fmt(v) { return (this.flt(v)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    esc(v) { return frappe.utils.escape_html(v == null ? "" : String(v)); }
 
     build() {
         this.$root = $(this.wrapper.page.main);
@@ -58,6 +59,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
                     <table class="fsr-table" id="fpe-pending-table">
                         <thead><tr>
                             <th style="width:36px;"></th>
+                            <th id="fpe-party-head" style="display:none;">Member Party</th>
                             <th>Invoice</th>
                             <th>Date</th>
                             <th>Due Date</th>
@@ -98,6 +100,10 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
 
     bind_elements() {
         const self = this;
+        this.selection = null;
+        this.pending = [];
+        this.allocations = {};
+        this.by_party = {};
         this.$company = this.$root.find("#fpe-company");
         this.$party_type = this.$root.find("#fpe-party-type");
         this.$party = this.$root.find("#fpe-party");
@@ -117,7 +123,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         this.$progress_label = this.$root.find("#fpe-progress-label");
 
         this.$company.on("change", () => localStorage.setItem("fpe_company", this.$company.val()));
-        this.$party_type.on("change", () => { this.$party.val(""); this.hide_dropdown(); this.deselect_all(); });
+        this.$party_type.on("change", () => { this.$party.val("").removeAttr("data-party-name"); this.selection = null; this.hide_dropdown(); this.deselect_all(); });
 
         this.$root.find("#fpe-load").on("click", () => this.load_pending());
         this.$root.find("#fpe-pay-all").on("click", () => {
@@ -130,13 +136,48 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
 
         this.bind_autocomplete(this.$party, (val, cb) => {
             const pt = this.$party_type.val();
-            frappe.call({ method: "fast_entry_app.api.ledger_pnl.search_parties", args: { party_type: pt, search: val, limit: 12 }, callback: (r) => cb(r.message || []) });
+            frappe.call({ method: "fast_entry_app.api.payment.search_payment_parties", args: { party_type: pt, search: val, limit: 12 }, callback: (r) => cb((r.message || {}).results || []) });
         }, (item) => {
-            this.$party.val(item.name).attr("data-party-name", item.customer_name || item.supplier_name || item.name);
-        }, "name", "name");
+            // A group row and a party row both carry .name, so remember which
+            // kind was picked - it decides the pending-invoice call and, later,
+            // whether we post one Payment Entry or a whole group payment.
+            this.selection = {
+                kind: item.kind || "party",
+                name: item.name,
+                party_name: item.party_name || item.label || item.name,
+                group: item.group || "",
+                member_count: item.member_count || 0
+            };
+            this.$party.val(item.name).attr("data-party-name", this.selection.party_name);
+            this.deselect_all();
+        }, "name", (item) => {
+            // Group rows are rendered as a distinct, labelled entry so the
+            // operator can tell "clear 2 IOCL accounts" from "pay IOCL - Mumbai".
+            if (item.kind === "group") {
+                return `<div class="fe-dropdown-item fe-dd-group" data-code="${item.name}">
+                    <span class="fe-dd-primary"><i class="fa fa-users"></i> ${item.label}</span>
+                    <span class="fe-dd-secondary">Group &middot; ${item.member_count} member${item.member_count === 1 ? "" : "s"} &middot; pays all together</span></div>`;
+            }
+            const grp = item.group ? ` &middot; Group: ${item.group}` : "";
+            return `<div class="fe-dropdown-item" data-code="${item.name}">
+                <span class="fe-dd-primary">${item.label || item.name}</span>
+                <span class="fe-dd-secondary">${item.name}${grp}</span></div>`;
+        });
+
+        // Picking a row remembers it, but typing afterwards must forget it again:
+        // otherwise a stale group selection would be posted against whatever text
+        // happens to be in the box. Setting .val() does not fire "input", so this
+        // only trips when the operator genuinely retypes.
+        this.$party.on("input", () => {
+            if (this.selection && this.$party.val() !== this.selection.name) {
+                this.selection = null;
+                this.$party.removeAttr("data-party-name");
+                this.deselect_all();
+            }
+        });
     }
 
-    bind_autocomplete($input, search_fn, select_fn, primary_field) {
+    bind_autocomplete($input, search_fn, select_fn, primary_field, render_fn) {
         const self = this;
         let timer = null;
         $input.on("input", function() {
@@ -150,6 +191,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
                     let html = "";
                     items.forEach(function(item) {
                         const primary = item[primary_field] || item.name;
+                        if (render_fn) { html += render_fn(item); return; }
                         html += `<div class="fe-dropdown-item" data-code="${item.name}"><span class="fe-dd-primary">${primary}</span><span class="fe-dd-secondary">${item.name}</span></div>`;
                     });
                     self.$dd = self.show_dropdown($input, html, function($el) {
@@ -209,43 +251,76 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         });
     }
 
+    is_group_mode() { return this.selection && this.selection.kind === "group"; }
+
     load_pending() {
         const company = this.$company.val();
         const party_type = this.$party_type.val();
         const party = this.$party.val();
         const self = this;
         if (!company || !party) { frappe.msgprint({ title: "Missing Details", indicator: "orange", message: "Select company and party first." }); return; }
-        this.$pending_body.html(`<tr><td colspan="7" style="text-align:center;padding:20px;color:#9ca3af;"><i class="fa fa-spinner fa-spin"></i> Loading pending invoices...</td></tr>`);
+
+        // A group selection loads every member's bills in one query; a party
+        // selection stays on the single-party path so existing behaviour and
+        // the single-party Payment Entry are untouched.
+        const group_mode = this.is_group_mode();
+        const method = group_mode
+            ? "fast_entry_app.api.payment.get_pending_party_group_invoices"
+            : "fast_entry_app.api.payment.get_pending_invoices";
+        const args = group_mode
+            ? { company: company, party_type: party_type, group: party }
+            : { company: company, party_type: party_type, party: party };
+
+        // A group table carries an extra "Member Party" column, so the spinner and
+        // error rows have to span the same number of cells the table really has.
+        const cols = group_mode ? 9 : 8;
+        this.$pending_body.html(`<tr><td colspan="${cols}" style="text-align:center;padding:20px;color:#9ca3af;"><i class="fa fa-spinner fa-spin"></i> Loading pending invoices...</td></tr>`);
         this.$pending_total.html("");
         this.$pending_empty.hide();
         frappe.call({
-            method: "fast_entry_app.api.payment.get_pending_invoices",
-            args: { company: company, party_type: party_type, party: party },
+            method: method,
+            args: args,
             callback: function(r) {
                 const data = r.message || {};
                 self.pending = data.invoices || [];
                 self.total_outstanding = self.flt(data.total_outstanding);
-                self.render_pending();
+                self.by_party = data.by_party || {};
+                self.party_field = party_type === "Customer" ? "customer" : "supplier";
+                self.render_pending(group_mode, data.parties || []);
                 self.preview_allocation();
             },
-            error: function() { self.$pending_body.html(`<tr><td colspan="7" style="text-align:center;padding:20px;color:#ef4444;">Failed to load pending invoices.</td></tr>`); }
+            error: function() { self.$pending_body.html(`<tr><td colspan="${cols}" style="text-align:center;padding:20px;color:#ef4444;">Failed to load pending invoices.</td></tr>`); }
         });
     }
 
-    render_pending() {
+    render_pending(group_mode, members) {
         const self = this;
         this.$pending_body.empty();
         this.$pending_total.html("");
+        this.$root.find("#fpe-party-head").css("display", group_mode ? "" : "none");
         if (!this.pending.length) { this.$pending_empty.show(); this.$root.find("#fpe-pending-sub").text(""); return; }
         this.$pending_empty.hide();
-        this.$root.find("#fpe-pending-sub").text(`${this.pending.length} invoices | Total Outstanding: Rs. ${this.fmt(this.total_outstanding)}`);
+
+        if (group_mode && members.length) {
+            // Say up front how many members this will actually pay, because one
+            // group click creates N Payment Entries and that surprises people.
+            this.$root.find("#fpe-pending-sub").text(
+                `${this.pending.length} invoices across ${members.length} member${members.length === 1 ? "" : "s"} | Total Outstanding: Rs. ${this.fmt(this.total_outstanding)}`
+            );
+        } else {
+            this.$root.find("#fpe-pending-sub").text(`${this.pending.length} invoices | Total Outstanding: Rs. ${this.fmt(this.total_outstanding)}`);
+        }
 
         this.pending.forEach(function(inv, i) {
             const tr = document.createElement("tr");
             tr.dataset.idx = i;
             const doctype = self.$party_type.val() === "Customer" ? "sales-invoice" : "purchase-invoice";
+            const party_cell = group_mode
+                ? `<td class="fpe-member">${self.esc(inv.party_name || inv[self.party_field] || "")}</td>`
+                : "";
             tr.innerHTML = `
                 <td style="text-align:center;"><input type="checkbox" class="fpe-check" data-idx="${i}" ${i === 0 ? "checked" : ""} /></td>
+                ${party_cell}
                 <td><a href="/app/${doctype}/${inv.name}" target="_blank">${inv.name}</a></td>
                 <td class="fsr-date">${inv.posting_date}</td>
                 <td class="fsr-date">${inv.due_date || ""}</td>
@@ -259,9 +334,27 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         this.$pending_body.find(".fpe-check").on("change", () => self.preview_allocation());
 
         this.$pending_total.html(`<tr style="background:#f9fafb;border-top:2px solid #e5e7eb;">
+            ${group_mode ? "<td></td>" : ""}
             <td colspan="5" style="padding:8px 10px;font-weight:700;color:#374151;">Total Outstanding</td>
             <td class="fsr-num" style="padding:8px 10px;font-weight:800;color:#dc2626;">${self.fmt(this.total_outstanding)}</td>
             <td colspan="2"></td></tr>`);
+
+        // Per-member subtotals, so a group payment shows its split before any
+        // Payment Entry exists rather than only in the success message.
+        if (group_mode) {
+            const keys = Object.keys(this.by_party || {});
+            keys.forEach(k => {
+                const b = this.by_party[k];
+                const n = (b.invoices || []).length;
+                self.$pending_body[0].appendChild(Object.assign(document.createElement("tr"), {
+                    innerHTML: `<td></td><td style="font-weight:700;color:#1d4ed8;">${self.esc(b.party_name || k)}</td>
+                        <td colspan="2" style="color:#6b7280;font-size:11px;">${n} invoice${n === 1 ? "" : "s"} &rarr; 1 Payment Entry</td>
+                        <td></td>
+                        <td class="fsr-num" style="font-weight:700;color:#374151;">${self.fmt(b.total)}</td>
+                        <td colspan="3"></td>`
+                }));
+            });
+        }
 
         this.preview_allocation();
     }
@@ -280,6 +373,8 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         this.$root.find("#fpe-pending-sub").text("");
         this.$sel_count.text("0");
         this.$sel_total.text("0.00");
+        this.allocations = {};
+        this.party_field = this.$party_type && this.$party_type.val() === "Customer" ? "customer" : "supplier";
         this.$progress_bar.css("width", "0%");
         this.$progress_pct.text("0%");
         this.$progress_label.text("Paying Rs. 0.00 of Rs. 0.00");
@@ -308,6 +403,9 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
             total_alloc += alloc;
         });
         const excess = amount - total_alloc;
+        // Remembered so create_payment() can rebuild the same allocation,
+        // split per member party, without asking the server to guess.
+        this.allocations = per;
 
         this.pending.forEach(function(inv, i) {
             const $tr = self.$pending_body.find(`tr[data-idx="${i}"]`);
@@ -343,7 +441,70 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         }
     }
 
+    // One entry per member party, carrying only that party's invoices. An ERPNext
+    // Payment Entry holds a single party, so this split is what makes N members
+    // become N Payment Entries that the Party Group Payment then ties together.
+    build_group_items() {
+        const by_party = {};
+        this.pending.forEach((inv, i) => {
+            const alloc = (this.allocations || {})[i];
+            if (!alloc) return;
+            const p = inv[this.party_field] || inv.party;
+            if (!p) return;
+            if (!by_party[p]) by_party[p] = { party: p, pay_amount: 0, invoices: [] };
+            by_party[p].pay_amount += alloc;
+            by_party[p].invoices.push({ name: inv.name, pay_amount: alloc });
+        });
+        return Object.keys(by_party).map(k => by_party[k]);
+    }
+
+    create_group_payment() {
+        const self = this;
+        const company = this.$company.val();
+        const items = this.build_group_items();
+        if (!items.length) {
+            frappe.msgprint({ title: "Nothing Selected", indicator: "orange", message: "Select at least one invoice to pay." });
+            return;
+        }
+        this.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Creating group payment...</span>');
+        this.$root.find("#fpe-create").prop("disabled", true);
+        frappe.call({
+            method: "fast_entry_app.api.payment.create_party_group_payment",
+            args: {
+                data: {
+                    company: company,
+                    party_type: this.$party_type.val(),
+                    group: this.selection.name,
+                    mode_of_payment: this.$mode.val() || "",
+                    posting_date: this.$posting_date.val() || "",
+                    reference_no: this.$ref_no.val() || "",
+                    reference_date: this.$ref_date.val() || "",
+                    items: items
+                }
+            },
+            callback: function(r) {
+                self.$root.find("#fpe-create").prop("disabled", false);
+                const m = r.message || {};
+                if (m.name) {
+                    const links = (m.payment_entries || []).map(n => `<a href="/app/payment-entry/${n}" target="_blank">${n}</a>`).join(", ");
+                    frappe.show_alert({ message: __("Group Payment {0} created for {1} member(s)", [m.name, (m.payments || []).length]), indicator: "green" });
+                    self.$status_bar.html(`<span class="fe-status-ok"><i class="fa fa-check"></i> <a href="/app/party-group-payment/${m.name}" target="_blank">${m.name}</a> | Rs. ${self.fmt(m.total)} | ${links}</span>`);
+                    self.load_pending();
+                    self.$amount.val("");
+                    self.preview_allocation();
+                } else {
+                    self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Group payment not created</span>');
+                }
+            },
+            error: function() {
+                self.$root.find("#fpe-create").prop("disabled", false);
+                self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Failed to create group payment</span>');
+            }
+        });
+    }
+
     create_payment() {
+        if (this.is_group_mode()) { this.create_group_payment(); return; }
         const self = this;
         const company = this.$company.val();
         const party_type = this.$party_type.val();

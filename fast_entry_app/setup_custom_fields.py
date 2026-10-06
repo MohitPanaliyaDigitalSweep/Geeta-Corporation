@@ -41,6 +41,15 @@ PROPERTY_SETTERS = [
 	("Sales Invoice Item", "item_name", "in_list_view", "1", "Check"),
 	("Sales Invoice Item", "warehouse", "in_list_view", "0", "Check"),
 	("Sales Invoice Item", "qty", "label", "Accepted Qty", "Data"),
+	# Pre-tick "Update Stock" on new manual Sales/Purchase Invoices in the
+	# standard ERPNext form. This lives at the metadata level (not just the
+	# client script in erpnext_pi_override.js) so it works regardless of
+	# browser cache or whether that script loads. Never put this in a fixture:
+	# a Property Setter whose doc_type is an ERPNext doctype crashes install
+	# when ERPNext is absent. Stay editable (users may still uncheck for
+	# service / consolidated invoices).
+	("Sales Invoice", "update_stock", "default", "1", "Check"),
+	("Purchase Invoice", "update_stock", "default", "1", "Check"),
 ]
 
 
@@ -68,7 +77,11 @@ def _item_table_fields():
 					"insert_after": "fe_box",
 					"in_list_view": 1,
 					"module": MODULE,
-					"read_only": 1,
+					# Editable on purpose: PCS is the primary quantity (rate is
+					# per-PCS), so it must be typeable. Box and PCS stay in sync
+					# both ways in the UI -- see erpnext_pi_override.js calc_row.
+					# Keep in sync with fixtures/custom_field.json.
+					"read_only": 0,
 					"default": "0",
 				},
 				{

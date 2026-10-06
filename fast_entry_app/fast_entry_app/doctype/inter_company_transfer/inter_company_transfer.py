@@ -414,6 +414,11 @@ class InterCompanyTransfer(StockController):
         si.due_date = self.posting_date
         si.currency = frappe.get_cached_value("Company", self.company, "default_currency") or "INR"
         si.ignore_pricing_rule = 1
+        # The app now defaults `update_stock` to 1 on Sale/Purchase Invoice for
+        # new manual forms. ICT moves stock via its own process, not through the
+        # invoice legs, so force this off -- otherwise both legs would attempt a
+        # (warehouse-less) stock posting on submit.
+        si.update_stock = 0
 
         if self.sales_tax_template:
             self.apply_tax_template(si, self.sales_tax_template, self.company)
@@ -457,6 +462,9 @@ class InterCompanyTransfer(StockController):
         pi.taxes_and_charges = ""
         if self.purchase_tax_template:
             self.apply_tax_template(pi, self.purchase_tax_template, self.to_company)
+        # See the matching note on the sales leg above: keep ICT legs from
+        # inheriting the app's new `update_stock = 1` default.
+        pi.update_stock = 0
 
         pi.flags.ignore_inter_company_validation = 1
         pi.flags.ignore_permissions = True
