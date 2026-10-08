@@ -100,32 +100,19 @@ def create_quotation(data):
     if discount > 0:
         qt.additional_discount_percentage = 0
         qt.discount_amount = discount
+        # Discount mode comes from the UI ("Net Total" default) — see sales.py.
+        apply_on = (data.get("apply_discount_on") or "Net Total").strip()
+        if apply_on not in ("Net Total", "Grand Total"):
+            frappe.throw(_("Apply Discount On must be Net Total or Grand Total"))
+        qt.apply_discount_on = apply_on
 
     gst_type = data.get("gst_type", "intra")
 
-    tax_override = flt(data.get("tax_override")) or 0
-    if tax_override > 0:
-        _apply_manual_sales_taxes(qt, company, tax_override, gst_type, company_doc)
-    else:
-        tax_template = _get_sales_tax_template(company, gst_type)
-        if tax_template:
-            qt.taxes_and_charges = tax_template
-            tmpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
-            qt.taxes = []
-            for row in tmpl.taxes:
-                if not row.account_head:
-                    continue
-                if "reverse" in (row.description or "").lower():
-                    continue
-                qt.append("taxes", {
-                    "charge_type": row.charge_type,
-                    "account_head": row.account_head,
-                    "description": row.description,
-                    "rate": row.rate,
-                    "cost_center": row.cost_center or company_doc.cost_center or "",
-                })
-
+    # Freight goes FIRST when present (see the note below): the GST rows are
+    # written as "On Previous Row Total" pointing at it, so GST covers items
+    # + freight.
     freight = flt(data.get("freight")) or 0
+    freight_row_idx = 0
     if freight > 0:
         income_account = company_doc.default_income_account or ""
         cost_center = company_doc.cost_center or ""
@@ -134,36 +121,43 @@ def create_quotation(data):
             "account_head": income_account,
             "description": "Freight / Transport",
             "rate": 0,
-            "amount": freight,
+            # NOTE: the child-table amount field is `tax_amount`; `amount`
+            # is not a column and is silently ignored (freight used to book 0).
+            "tax_amount": freight,
             "cost_center": cost_center,
         })
-        cgst_account = _get_qt_tax_account(company, "cgst")
-        sgst_account = _get_qt_tax_account(company, "sgst")
-        igst_account = _get_qt_tax_account(company, "igst")
-        if gst_type == "inter" and igst_account:
-            qt.append("taxes", {
-                "charge_type": "On Net Total",
-                "account_head": igst_account,
-                "description": "Freight IGST @ 18%",
-                "rate": 18,
-                "cost_center": cost_center,
-            })
-        else:
-            if cgst_account:
+        freight_row_idx = 1
+
+    tax_override = flt(data.get("tax_override")) or 0
+    if tax_override > 0:
+        _apply_manual_sales_taxes(qt, company, tax_override, gst_type, company_doc, freight_row_idx)
+    else:
+        tax_template = _get_sales_tax_template(company, gst_type)
+        if tax_template:
+            qt.taxes_and_charges = tax_template
+            tmpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
+            if not freight_row_idx:
+                qt.taxes = []
+            for row in tmpl.taxes:
+                if not row.account_head:
+                    continue
+                if "reverse" in (row.description or "").lower():
+                    continue
+                charge_type = row.charge_type
+                row_id = row.row_id
+                if freight_row_idx and charge_type == "On Net Total":
+                    charge_type = "On Previous Row Total"
+                    row_id = freight_row_idx
+                elif row_id:
+                    # Freight row prepended above shifts template row indexes.
+                    row_id = flt(row_id) + freight_row_idx
                 qt.append("taxes", {
-                    "charge_type": "On Net Total",
-                    "account_head": cgst_account,
-                    "description": "Freight CGST @ 9%",
-                    "rate": 9,
-                    "cost_center": cost_center,
-                })
-            if sgst_account:
-                qt.append("taxes", {
-                    "charge_type": "On Net Total",
-                    "account_head": sgst_account,
-                    "description": "Freight SGST @ 9%",
-                    "rate": 9,
-                    "cost_center": cost_center,
+                    "charge_type": charge_type,
+                    "row_id": row_id,
+                    "account_head": row.account_head,
+                    "description": row.description,
+                    "rate": row.rate,
+                    "cost_center": row.cost_center or company_doc.cost_center or "",
                 })
 
     qt.flags.ignore_permissions = True

@@ -13,6 +13,21 @@
     transition: border-color 0.15s, box-shadow 0.15s;
     -moz-appearance: textfield;
 }
+/* Per-row TDS / Advance inputs: same look as To Pay, narrower */
+.fpp-tds-input,
+.fpp-adv-input {
+    width: 110px;
+    text-align: right;
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    -moz-appearance: textfield;
+}
 .fpp-pay-input::-webkit-inner-spin-button,
 .fpp-pay-input::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -126,4 +141,25 @@
     -moz-appearance: textfield;
     -webkit-appearance: none;
     margin: 0;
+}
+
+/* --- Party Group payment mode ------------------------------------------- */
+
+.fe-dropdown-item.fe-dd-group .fe-dd-primary {
+    color: #1d4ed8;
+    font-weight: 700;
+}
+.fe-dropdown-item.fe-dd-group .fe-dd-secondary {
+    color: #1d4ed8;
+    background: #eff6ff;
+}
+
+.fpp-member {
+    font-weight: 600;
+    color: #1d4ed8;
+    white-space: nowrap;
+}
+
+.fpp-member-sub td {
+    background: #f5f9ff;
 }

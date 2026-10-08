@@ -22,23 +22,29 @@ add_to_apps_screen = [
 ]
 
 # Includes in <head>
+# NOTE: `?v=` suffix forces browsers to refetch after fixes. Frappe serves
+# /assets with `Cache-Control: max-age=43200` (12h) and does NOT version plain
+# public files (only *.bundle.* get hashed names), so without this suffix users
+# keep running stale JS/CSS for half a day. Bump the suffix on every release
+# that touches public/css or public/js.
+_FE_ASSET_V = "20261007d"
 app_include_css = [
-    "/assets/fast_entry_app/css/fast_entry_app.css",
-    "/assets/fast_entry_app/css/fast_purchase_entry.css",
-    "/assets/fast_entry_app/css/fast_sales_entry.css",
-    "/assets/fast_entry_app/css/fast_ict_entry.css",
-    "/assets/fast_entry_app/css/fast_quotation_entry.css",
-    "/assets/fast_entry_app/css/fast_party_group.css",
-    "/assets/fast_entry_app/css/fast_ledger_pnl.css",
-    "/assets/fast_entry_app/css/fast_stock_report.css",
-    "/assets/fast_entry_app/css/fast_payment_entry.css",
-    "/assets/fast_entry_app/css/fast_bulk_payment.css",
-    "/assets/fast_entry_app/css/fast_sales_payment.css",
-    "/assets/fast_entry_app/css/report_ui_components.css",
+    f"/assets/fast_entry_app/css/fast_entry_app.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_purchase_entry.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_sales_entry.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_ict_entry.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_quotation_entry.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_party_group.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_ledger_pnl.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_stock_report.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_payment_entry.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_bulk_payment.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/fast_sales_payment.css?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/css/report_ui_components.css?v={_FE_ASSET_V}",
 ]
 app_include_js = [
-    "/assets/fast_entry_app/js/fast_entry_app.js",
-    "/assets/fast_entry_app/js/report_ui_components.js",
+    f"/assets/fast_entry_app/js/fast_entry_app.js?v={_FE_ASSET_V}",
+    f"/assets/fast_entry_app/js/report_ui_components.js?v={_FE_ASSET_V}",
 ]
 
 # Only load PI/SI override on those forms

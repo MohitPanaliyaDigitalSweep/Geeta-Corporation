@@ -46,6 +46,24 @@
 
 .fe-field .reqd { color: #e74c3c; }
 
+.fe-field .fe-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: none;
+    font-weight: 600;
+    color: #444;
+    cursor: pointer;
+    padding-top: 17px;
+}
+
+.fe-field .fe-checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+}
+
 .fe-input {
     width: 100%;
     padding: 6px 8px;
@@ -107,6 +125,18 @@
     font-weight: 600;
 }
 
+.fe-balance-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.fe-balance-unpaid { background: #fde8e8; color: #c0392b; }
+.fe-balance-advance { background: #e8f5e9; color: #27ae60; }
+
 /* Grid Section */
 .fe-grid-section {
     background: #fff;
@@ -138,6 +168,14 @@
     white-space: nowrap;
 }
 
+/* Numeric columns right-aligned: header, inputs and footer all agree */
+.fe-grid thead th.fe-col-box,
+.fe-grid thead th.fe-col-pcs,
+.fe-grid thead th.fe-col-ltr,
+.fe-grid thead th.fe-col-qty,
+.fe-grid thead th.fe-col-rate,
+.fe-grid thead th.fe-col-amount { text-align: right; }
+
 .fe-grid tbody tr {
     border-bottom: 1px solid #e5e7eb;
     transition: background 0.1s;
@@ -168,7 +206,7 @@
     box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
 }
 
-.fe-num-input { text-align: center; }
+.fe-num-input { text-align: right; }
 
 input.fe-num-input::-webkit-outer-spin-button,
 input.fe-num-input::-webkit-inner-spin-button {
@@ -277,6 +315,16 @@ input.fe-num-input[type=number] {
     color: #1a1a2e !important;
 }
 
+.fe-grid-total-row td {
+    text-align: center;
+}
+.fe-grid-total-row td.fe-col-box,
+.fe-grid-total-row td.fe-col-pcs,
+.fe-grid-total-row td.fe-col-ltr,
+.fe-grid-total-row td.fe-col-qty { text-align: right; }
+.fe-grid-total-row td.fe-col-amount { text-align: right; }
+.fe-grid-total-row td.fe-col-rate { text-align: center; }
+
 /* Actions */
 .fe-actions-section {
     display: flex;
@@ -333,6 +381,68 @@ input.fe-num-input[type=number] {
 }
 
 .fe-btn-success:hover { background: #059669; }
+
+.fe-btn-wa {
+    background: #25d366;
+    color: #fff;
+    border-color: #25d366;
+}
+
+.fe-btn-wa:hover { background: #1eb858; }
+
+.fe-btn-email {
+    background: #64748b;
+    color: #fff;
+    border-color: #64748b;
+}
+
+.fe-btn-email:hover { background: #475569; }
+
+/* WhatsApp QR Modal */
+.fe-modal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fe-modal-box {
+    background: #fff;
+    border-radius: 8px;
+    width: 420px;
+    max-width: 95vw;
+    padding: 18px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.fe-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 15px;
+}
+
+.fe-modal-body p { font-size: 12px; color: #4b5563; margin: 0 0 12px; }
+
+.fe-wa-qr-wrap {
+    text-align: center;
+    padding: 10px;
+    border: 1px dashed #d1d5db;
+    border-radius: 6px;
+}
+
+.fe-wa-qr-wrap img { width: 220px; height: 220px; object-fit: contain; }
+
+.fe-wa-qr-status {
+    text-align: center;
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 10px;
+}
 
 /* Status Bar */
 .fe-status-bar {

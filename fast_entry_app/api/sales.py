@@ -225,30 +225,24 @@ def create_sales_invoice(data):
     if discount > 0:
         si.additional_discount_percentage = 0
         si.discount_amount = discount
+        # Discount mode comes from the UI ("Net Total" default). Net Total:
+        # discount off the bill net, GST on the discounted net. Grand Total:
+        # GST on the full pre-discount net, discount off the grand total.
+        # Explicit (never the site default) so the preview and the doc agree.
+        apply_on = (data.get("apply_discount_on") or "Net Total").strip()
+        if apply_on not in ("Net Total", "Grand Total"):
+            frappe.throw(_("Apply Discount On must be Net Total or Grand Total"))
+        si.apply_discount_on = apply_on
 
     tax_override = flt(data.get("tax_override")) or 0
-    if tax_override > 0:
-        _apply_manual_sales_taxes(si, company, tax_override, data.get("gst_type", "intra"), company_doc)
-    else:
-        tax_template = _get_sales_tax_template(company, data.get("gst_type"))
-        if tax_template:
-            si.taxes_and_charges = tax_template
-            tmpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
-            si.taxes = []
-            for row in tmpl.taxes:
-                if not row.account_head:
-                    continue
-                if "reverse" in (row.description or "").lower():
-                    continue
-                si.append("taxes", {
-                    "charge_type": row.charge_type,
-                    "account_head": row.account_head,
-                    "description": row.description,
-                    "rate": row.rate,
-                    "cost_center": row.cost_center or company_doc.cost_center or "",
-                })
-
     freight = flt(data.get("freight")) or 0
+
+    # Freight goes FIRST when present: the GST rows below are written as
+    # "On Previous Row Total" pointing at it, so GST covers items + freight.
+    # (A separate "On Net Total" freight-GST row would compute on the invoice
+    # subtotal instead of the freight, and duplicate CGST/SGST accounts break
+    # India Compliance's item-wise GST validation.)
+    freight_row_idx = 0
     if freight > 0:
         income_account = company_doc.default_income_account or ""
         cost_center = company_doc.cost_center or ""
@@ -257,37 +251,42 @@ def create_sales_invoice(data):
             "account_head": income_account,
             "description": "Freight / Transport",
             "rate": 0,
-            "amount": freight,
+            # NOTE: the child-table amount field is `tax_amount`; `amount`
+            # is not a column and is silently ignored (freight used to book 0).
+            "tax_amount": freight,
             "cost_center": cost_center,
         })
-        gst_type = data.get("gst_type", "intra")
-        cgst_account = _get_tax_account(company, "cgst")
-        sgst_account = _get_tax_account(company, "sgst")
-        igst_account = _get_tax_account(company, "igst")
-        if gst_type == "inter" and igst_account:
-            si.append("taxes", {
-                "charge_type": "On Net Total",
-                "account_head": igst_account,
-                "description": "Freight IGST @ 18%",
-                "rate": 18,
-                "cost_center": cost_center,
-            })
-        else:
-            if cgst_account:
+        freight_row_idx = 1
+
+    if tax_override > 0:
+        _apply_manual_sales_taxes(si, company, tax_override, data.get("gst_type", "intra"), company_doc, freight_row_idx)
+    else:
+        tax_template = _get_sales_tax_template(company, data.get("gst_type"))
+        if tax_template:
+            si.taxes_and_charges = tax_template
+            tmpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
+            if not freight_row_idx:
+                si.taxes = []
+            for row in tmpl.taxes:
+                if not row.account_head:
+                    continue
+                if "reverse" in (row.description or "").lower():
+                    continue
+                charge_type = row.charge_type
+                row_id = row.row_id
+                if freight_row_idx and charge_type == "On Net Total":
+                    charge_type = "On Previous Row Total"
+                    row_id = freight_row_idx
+                elif row_id:
+                    # Freight row prepended above shifts template row indexes.
+                    row_id = flt(row_id) + freight_row_idx
                 si.append("taxes", {
-                    "charge_type": "On Net Total",
-                    "account_head": cgst_account,
-                    "description": "Freight CGST @ 9%",
-                    "rate": 9,
-                    "cost_center": cost_center,
-                })
-            if sgst_account:
-                si.append("taxes", {
-                    "charge_type": "On Net Total",
-                    "account_head": sgst_account,
-                    "description": "Freight SGST @ 9%",
-                    "rate": 9,
-                    "cost_center": cost_center,
+                    "charge_type": charge_type,
+                    "row_id": row_id,
+                    "account_head": row.account_head,
+                    "description": row.description,
+                    "rate": row.rate,
+                    "cost_center": row.cost_center or company_doc.cost_center or "",
                 })
 
     si.flags.ignore_permissions = True
@@ -410,7 +409,7 @@ def get_last_invoices(customer, limit=5):
 
 
 def _get_tax_account(company, tax_type):
-    """Get CGST/SGST/IGST account for a company."""
+    """Get CGST/SGST/IGST account for a company (never a Refund/RCM account)."""
     maps = {
         "cgst": "Output Tax CGST",
         "sgst": "Output Tax SGST",
@@ -419,7 +418,16 @@ def _get_tax_account(company, tax_type):
     prefix = maps.get(tax_type, "")
     if not prefix:
         return ""
-    account = frappe.db.get_value("Account", {"company": company, "account_name": ["like", f"%{prefix}%"]}, "name")
+    account = frappe.db.get_value(
+        "Account",
+        [
+            ["company", "=", company],
+            ["account_name", "like", f"%{prefix}%"],
+            ["account_name", "not like", "%RCM%"],
+            ["account_name", "not like", "%Refund%"],
+        ],
+        "name",
+    )
     return account or ""
 
 
@@ -453,9 +461,16 @@ def _get_sales_tax_template(company, gst_type="intra"):
     return template
 
 
-def _apply_manual_sales_taxes(si, company, tax_rate, gst_type, company_doc):
-    """Apply manual GST tax rows for sales when user selects a tax override rate."""
+def _apply_manual_sales_taxes(si, company, tax_rate, gst_type, company_doc, freight_row_idx=0):
+    """Apply manual GST tax rows for sales when user selects a tax override rate.
+
+    When freight is present (freight_row_idx > 0) the rows point at it via
+    "On Previous Row Total" so GST covers items + freight (see the freight
+    block in create_sales_invoice for why a separate freight-GST row is wrong).
+    """
     si.taxes_and_charges = ""
+    charge_type = "On Previous Row Total" if freight_row_idx else "On Net Total"
+    row_id = freight_row_idx or None
 
     if gst_type == "inter":
         account = frappe.db.get_value(
@@ -471,7 +486,8 @@ def _apply_manual_sales_taxes(si, company, tax_rate, gst_type, company_doc):
         if not account:
             frappe.throw(_("No IGST account found for {0}. Please set up tax accounts.").format(company))
         si.append("taxes", {
-            "charge_type": "On Net Total",
+            "charge_type": charge_type,
+            "row_id": row_id,
             "account_head": account,
             "description": f"IGST @ {tax_rate}%",
             "rate": tax_rate,
@@ -502,14 +518,16 @@ def _apply_manual_sales_taxes(si, company, tax_rate, gst_type, company_doc):
             frappe.throw(_("No CGST/SGST accounts found for {0}. Please set up tax accounts.").format(company))
         half_rate = tax_rate / 2
         si.append("taxes", {
-            "charge_type": "On Net Total",
+            "charge_type": charge_type,
+            "row_id": row_id,
             "account_head": cgst_account,
             "description": f"CGST @ {half_rate}%",
             "rate": half_rate,
             "cost_center": company_doc.cost_center or "",
         })
         si.append("taxes", {
-            "charge_type": "On Net Total",
+            "charge_type": charge_type,
+            "row_id": row_id,
             "account_head": sgst_account,
             "description": f"SGST @ {half_rate}%",
             "rate": half_rate,

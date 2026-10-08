@@ -149,14 +149,15 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                 <div class="fe-totals-left">
                     <div class="fe-field fe-field-sm"><label>Discount %</label><input type="number" class="fe-input fe-input-sm" id="fe-discount-pct" value="0" min="0" max="100" step="any" /></div>
                     <div class="fe-field fe-field-sm"><label>Discount Amt</label><input type="number" class="fe-input fe-input-sm" id="fe-discount" value="0" min="0" /></div>
+                    <div class="fe-field fe-field-sm"><label>Discount On</label><select class="fe-input fe-input-sm" id="fe-discount-on"><option value="Net Total">Net Total</option><option value="Grand Total">Grand Total</option></select></div>
                     <div class="fe-field fe-field-sm"><label>Freight</label><input type="number" class="fe-input fe-input-sm" id="fe-freight" value="0" min="0" /></div>
+                    <div class="fe-discount-warn" id="fe-discount-warn">Discount exceeds Sub Total &mdash; ERPNext will reject this bill on save.</div>
                 </div>
                 <div class="fe-totals-right">
                     <table class="fe-totals-table">
                         <tr><td>Sub Total</td><td id="fe-sub-total">0.00</td></tr>
                         <tr><td>Discount</td><td id="fe-total-discount">-0.00</td></tr>
                         <tr><td>Freight</td><td id="fe-total-freight">+0.00</td></tr>
-                        <tr class="fe-freight-gst-row" style="display:none"><td>Freight GST @18%</td><td id="fe-freight-gst">0.00</td></tr>
                         <tr class="fe-tax-row" id="fe-cgst-row"><td>CGST</td><td id="fe-cgst-amt">0.00</td></tr>
                         <tr class="fe-tax-row" id="fe-sgst-row"><td>SGST</td><td id="fe-sgst-amt">0.00</td></tr>
                         <tr class="fe-tax-row" id="fe-igst-row" style="display:none"><td>IGST</td><td id="fe-igst-amt">0.00</td></tr>
@@ -197,6 +198,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$stock_impact = this.$root.find("#fe-stock-impact");
         this.$discount = this.$root.find("#fe-discount");
         this.$discount_pct = this.$root.find("#fe-discount-pct");
+        this.$discount_on = this.$root.find("#fe-discount-on");
         this.$freight = this.$root.find("#fe-freight");
         this.$status_bar = this.$root.find("#fe-status-bar");
 
@@ -224,6 +226,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             this.update_totals();
         });
         this.$freight.on("input", () => this.update_totals());
+        this.$discount_on.on("change", () => this.update_totals());
         this.$tax_template.on("change", () => this.update_totals());
         this.$gst_type.on("change", () => this.update_totals());
 
@@ -631,8 +634,6 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
 
         const discount = this.flt(this.$discount.val());
         const freight = this.flt(this.$freight.val());
-        const freight_gst = freight * 0.18;
-        const after_discount = sub_total - discount + freight + freight_gst;
 
         const tax_override = parseFloat(this.$tax_template.val()) || 0;
         const gst_type = this.$gst_type.val();
@@ -641,32 +642,43 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             this.items.forEach(row => { if (row.gst_rate > 0) total_gst_rate = row.gst_rate; });
         }
 
+        // ERPNext-exact totals, following the Discount On selector:
+        // - Net Total (default): the discount comes off the bill net at bill
+        //   level, and GST is charged on the discounted net.
+        // - Grand Total: GST is charged on the FULL pre-discount net (plus
+        //   freight when present) and the discount comes off the grand total.
+        // When freight is present the server puts the freight Actual row
+        // FIRST and the GST rows point at it ("On Previous Row Total"), so
+        // GST covers the taxable base + freight in both modes.
+        const apply_on = (this.$discount_on && this.$discount_on.val()) || "Net Total";
+        const disc_base = apply_on === "Net Total" ? sub_total - discount : sub_total;
+        const main_base = disc_base + (freight > 0 ? freight : 0);
+        const main_tax = main_base * total_gst_rate / 100;
+        const grand_raw = sub_total - discount + freight + main_tax;
+
         let cgst = 0, sgst = 0, igst = 0;
         if (total_gst_rate > 0) {
             if (gst_type === "intra") {
-                cgst = after_discount * (total_gst_rate / 2) / 100;
-                sgst = after_discount * (total_gst_rate / 2) / 100;
+                cgst = main_tax / 2;
+                sgst = main_tax / 2;
             } else {
-                igst = after_discount * total_gst_rate / 100;
+                igst = main_tax;
             }
         }
-        const total_tax = cgst + sgst + igst;
-        const net_raw = after_discount + total_tax;
+        const total_tax = main_tax;
+        const net_raw = grand_raw;
         const round_off = Math.round(net_raw) - net_raw;
         const net_total = Math.round(net_raw);
 
         this.$root.find("#fe-sub-total").text(sub_total.toFixed(2));
         this.$root.find("#fe-total-discount").text("-" + discount.toFixed(2));
         this.$root.find("#fe-total-freight").text("+" + freight.toFixed(2));
-        this.$root.find("#fe-freight-gst").text("+" + freight_gst.toFixed(2));
         this.$root.find("#fe-cgst-amt").text(cgst.toFixed(2));
         this.$root.find("#fe-sgst-amt").text(sgst.toFixed(2));
         this.$root.find("#fe-igst-amt").text(igst.toFixed(2));
         this.$root.find("#fe-round-off").text(round_off.toFixed(2));
         this.$root.find("#fe-net-total").text(net_total.toFixed(2));
-
-        if (freight > 0) { this.$root.find(".fe-freight-gst-row").show(); }
-        else { this.$root.find(".fe-freight-gst-row").hide(); }
+        this.$root.find("#fe-discount-warn").toggleClass("fe-show", discount > sub_total);
 
         if (gst_type === "intra") { this.$root.find("#fe-cgst-row, #fe-sgst-row").show(); this.$root.find("#fe-igst-row").hide(); }
         else { this.$root.find("#fe-cgst-row, #fe-sgst-row").hide(); this.$root.find("#fe-igst-row").show(); }
@@ -696,9 +708,10 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             warehouse: this.$warehouse.val(),
             update_stock: this.$stock_impact.prop("checked") ? 1 : 0,
             discount: this.flt(this.$discount.val()),
+            apply_discount_on: (this.$discount_on && this.$discount_on.val()) || "Net Total",
             discount_pct: this.flt(this.$discount_pct.val()),
             freight: this.flt(this.$freight.val()),
-            freight_gst: this.flt(this.$freight.val()) * 0.18,
+            freight_gst: 0,
             items: this.items.filter(r => r.item_code).map(r => ({
                 item_code: r.item_code, item_name: r.item_name, box: r.box, pcs: r.pcs,
                 ltr: r.ltr, qty: r.qty, rate: r.rate, amount: r.amount, uom: "Litre",

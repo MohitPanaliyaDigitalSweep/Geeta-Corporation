@@ -79,6 +79,18 @@
             -webkit-appearance: none; appearance: none;
         }
         input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px #DFF0FF; }
+        /* No spinner buttons on number inputs; values change by typing only
+           (wheel / ArrowUp / ArrowDown stepping is disabled in JS below). */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]:hover::-webkit-inner-spin-button,
+        input[type="number"]:focus::-webkit-inner-spin-button,
+        input[type="number"]:hover::-webkit-outer-spin-button,
+        input[type="number"]:focus::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
         .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
         .check-field { display: flex; align-items: center; gap: 8px; }
@@ -270,14 +282,22 @@
                     <input type="number" id="f-disc-amt" value="0" min="0" step="any">
                 </div>
                 <div class="field">
+                    <label>Disc On</label>
+                    <select id="f-disc-on">
+                        <option value="Net Total">Net Total</option>
+                        <option value="Grand Total">Grand Total</option>
+                    </select>
+                </div>
+                <div class="field">
                     <label>Freight</label>
                     <input type="number" id="f-freight" value="0" min="0" step="any">
                 </div>
             </div>
+            <div id="t-disc-warn" style="display:none;color:#e74c3c;font-size:11px;font-weight:600;">Discount exceeds Sub Total — ERPNext will reject this bill on save.</div>
             <div class="totals">
                 <div class="t-row"><span>Sub Total</span><span id="t-sub">0.00</span></div>
                 <div class="t-row"><span>Discount</span><span id="t-disc">-0.00</span></div>
-                <div class="t-row"><span>Freight (+GST)</span><span id="t-freight">+0.00</span></div>
+                <div class="t-row"><span>Freight</span><span id="t-freight">+0.00</span></div>
                 <div class="t-tax" id="t-cgst-row"><span>CGST</span><span id="t-cgst">0.00</span></div>
                 <div class="t-tax" id="t-sgst-row"><span>SGST</span><span id="t-sgst">0.00</span></div>
                 <div class="t-tax" id="t-igst-row" style="display:none"><span>IGST</span><span id="t-igst">0.00</span></div>
@@ -310,6 +330,21 @@
 
             function fmt(v) { return (parseFloat(v) || 0).toFixed(2); }
             function flt(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+            /* Number inputs change by typing only: ignore mouse-wheel steps and
+               ArrowUp/ArrowDown steps so scrolling the form never edits values. */
+            function isNumInput(el) {
+                return !!(el && el.tagName === "INPUT" && el.type === "number");
+            }
+            document.addEventListener("wheel", function (e) {
+                if (isNumInput(e.target)) { e.target.blur(); }
+                else if (isNumInput(document.activeElement)) { document.activeElement.blur(); }
+            }, { passive: true, capture: true });
+            document.addEventListener("keydown", function (e) {
+                if ((e.key === "ArrowUp" || e.key === "ArrowDown") && isNumInput(e.target)) {
+                    e.preventDefault();
+                }
+            }, true);
 
             function toast(msg, cls, ms) {
                 var t = $("#toast");
@@ -650,8 +685,6 @@
                 });
                 var disc = flt($("#f-disc-amt").value);
                 var freight = flt($("#f-freight").value);
-                var freightGst = freight * 0.18;
-                var after = sub - disc + freight + freightGst;
 
                 var ovr = flt($("#f-tax-override").value);
                 var gstType = $("#f-gst-type").value;
@@ -662,19 +695,28 @@
                     }
                 }
 
+                // ERPNext-exact totals, following the Disc On selector:
+                // - Net Total (default): discount off the bill net at bill
+                //   level, GST on the discounted net.
+                // - Grand Total: GST on the FULL pre-discount net (plus
+                //   freight when present), discount off the grand total.
+                var applyOn = $("#f-disc-on").value || "Net Total";
+                var discBase = applyOn === "Net Total" ? sub - disc : sub;
+                var mainBase = discBase + (freight > 0 ? freight : 0);
+                var mainTax = mainBase * rate / 100;
+                var raw = sub - disc + freight + mainTax;
+
                 var cgst = 0, sgst = 0, igst = 0;
                 if (rate > 0) {
-                    if (gstType === "intra") { cgst = sgst = after * (rate / 2) / 100; }
-                    else { igst = after * rate / 100; }
+                    if (gstType === "intra") { cgst = sgst = mainTax / 2; }
+                    else { igst = mainTax; }
                 }
-                var tax = cgst + sgst + igst;
-                var raw = after + tax;
                 var round = Math.round(raw) - raw;
                 var net = Math.round(raw);
 
                 $("#t-sub").textContent = fmt(sub);
                 $("#t-disc").textContent = "-" + fmt(disc);
-                $("#t-freight").textContent = "+" + fmt(freight + freightGst);
+                $("#t-freight").textContent = "+" + fmt(freight);
                 $("#t-cgst").textContent = fmt(cgst);
                 $("#t-sgst").textContent = fmt(sgst);
                 $("#t-igst").textContent = fmt(igst);
@@ -684,6 +726,7 @@
                 $("#t-cgst-row").style.display = gstType === "intra" ? "flex" : "none";
                 $("#t-sgst-row").style.display = gstType === "intra" ? "flex" : "none";
                 $("#t-igst-row").style.display = gstType === "inter" ? "flex" : "none";
+                $("#t-disc-warn").style.display = disc > sub ? "block" : "none";
             }
 
             /* ---------- validation + save ---------- */
@@ -716,8 +759,9 @@
                     sales_person: $("#f-sales-person").value,
                     discount: flt($("#f-disc-amt").value),
                     discount_pct: flt($("#f-disc-pct").value),
+                    apply_discount_on: $("#f-disc-on").value || "Net Total",
                     freight: flt($("#f-freight").value),
-                    freight_gst: flt($("#f-freight").value) * 0.18,
+                    freight_gst: 0,
                     draft: 1,
                     items: items.filter(function (r) { return r.item_code; }).map(function (r) {
                         return {
@@ -760,6 +804,7 @@
                 calcTotals();
             });
             $("#f-freight").addEventListener("input", calcTotals);
+            $("#f-disc-on").addEventListener("change", calcTotals);
             $("#f-tax-override").addEventListener("change", calcTotals);
             $("#f-gst-type").addEventListener("change", calcTotals);
 

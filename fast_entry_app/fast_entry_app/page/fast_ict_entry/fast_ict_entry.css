@@ -126,6 +126,22 @@
     white-space: nowrap;
 }
 
+/* Numeric columns right-aligned: header, inputs and footer all agree */
+.fe-grid thead th.fe-col-box,
+.fe-grid thead th.fe-col-pcs,
+.fe-grid thead th.fe-col-ltr,
+.fe-grid thead th.fe-col-qty,
+.fe-grid thead th.fe-col-rate,
+.fe-grid thead th.fe-col-amount { text-align: right; }
+
+/* Grid footer totals: count cell centered, numeric cells right */
+.fe-grid tfoot td { text-align: center; }
+.fe-grid tfoot td.fe-col-box,
+.fe-grid tfoot td.fe-col-pcs,
+.fe-grid tfoot td.fe-col-ltr,
+.fe-grid tfoot td.fe-col-qty,
+.fe-grid tfoot td.fe-col-amount { text-align: right; }
+
 .fe-grid tbody tr {
     border-bottom: 1px solid #e5e7eb;
     transition: background 0.1s;
@@ -156,7 +172,7 @@
     box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
 }
 
-.fe-num-input { text-align: center; }
+.fe-num-input { text-align: right; }
 
 input.fe-num-input::-webkit-outer-spin-button,
 input.fe-num-input::-webkit-inner-spin-button {

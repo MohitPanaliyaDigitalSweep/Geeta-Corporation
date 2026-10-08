@@ -161,20 +161,6 @@ def _sales_invoice_fields():
 	]
 
 
-# Keys that are safe to keep in sync on an already existing field.
-_UPDATABLE = (
-	"label",
-	"insert_after",
-	"in_list_view",
-	"read_only",
-	"hidden",
-	"default",
-	"options",
-	"description",
-	"module",
-)
-
-
 def get_field_definitions():
 	"""All app-owned custom fields, in creation order."""
 	return _item_table_fields() + _party_fields() + _sales_invoice_fields()

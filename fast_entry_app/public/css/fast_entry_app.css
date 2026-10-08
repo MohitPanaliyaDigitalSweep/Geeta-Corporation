@@ -8,4 +8,24 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 input[type="number"] {
     -moz-appearance: textfield;
+    appearance: textfield;
+}
+/* Never show the spinner on focus/hover either (Chrome re-shows it otherwise) */
+input[type="number"]:hover::-webkit-inner-spin-button,
+input[type="number"]:focus::-webkit-inner-spin-button,
+input[type="number"]:hover::-webkit-outer-spin-button,
+input[type="number"]:focus::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Frappe v16 paints checkbox ticks as a background SVG (no-repeat, centered,
+   57%). Our .fe-input:focus rule uses the `background` shorthand, which resets
+   background-repeat to `repeat` (tiles the tick into multiple marks) AND
+   background-position to `0% 0%` (pins the small glyph in the corner) while the
+   box keeps focus after being clicked. Pin both back (higher specificity than
+   .fe-input:focus). */
+input[type="checkbox"].fe-input:focus {
+    background-repeat: no-repeat;
+    background-position: center;
 }

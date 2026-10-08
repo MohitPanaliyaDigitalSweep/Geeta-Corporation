@@ -168,6 +168,14 @@
     white-space: nowrap;
 }
 
+/* Numeric columns right-aligned: header, inputs and footer all agree */
+.fe-grid thead th.fe-col-box,
+.fe-grid thead th.fe-col-pcs,
+.fe-grid thead th.fe-col-ltr,
+.fe-grid thead th.fe-col-qty,
+.fe-grid thead th.fe-col-rate,
+.fe-grid thead th.fe-col-amount { text-align: right; }
+
 .fe-grid tbody tr {
     border-bottom: 1px solid #e5e7eb;
     transition: background 0.1s;
@@ -198,7 +206,7 @@
     box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
 }
 
-.fe-num-input { text-align: center; }
+.fe-num-input { text-align: right; }
 
 input.fe-num-input::-webkit-outer-spin-button,
 input.fe-num-input::-webkit-inner-spin-button {
@@ -276,7 +284,19 @@ input.fe-num-input[type=number] {
     padding: 12px 16px;
     display: flex;
     gap: 12px;
+    flex-wrap: wrap;
 }
+
+/* Discount-exceeds-subtotal warning (hidden until toggled by JS class) */
+.fe-discount-warn {
+    display: none;
+    flex-basis: 100%;
+    color: #e74c3c;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.fe-discount-warn.fe-show { display: block; }
 
 .fe-totals-right {
     width: 300px;
@@ -310,6 +330,10 @@ input.fe-num-input[type=number] {
 .fe-grid-total-row td {
     text-align: center;
 }
+.fe-grid-total-row td.fe-col-box,
+.fe-grid-total-row td.fe-col-pcs,
+.fe-grid-total-row td.fe-col-ltr,
+.fe-grid-total-row td.fe-col-qty { text-align: right; }
 .fe-grid-total-row td.fe-col-amount { text-align: right; }
 .fe-grid-total-row td.fe-col-rate { text-align: center; }
 

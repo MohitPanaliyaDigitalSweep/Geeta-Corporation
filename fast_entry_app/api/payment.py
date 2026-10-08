@@ -49,24 +49,61 @@ def _assert_group_serves(party_type, group):
 
 @frappe.whitelist()
 def get_pending_invoices(company, party_type, party):
-    """All unpaid invoices of a party, oldest first.
+    """All unpaid invoices of a SINGLE party, oldest first.
 
-    party_type: 'Customer' (Sales Invoice) or 'Supplier' (Purchase Invoice).
+    Deliberately NOT expanded across the party's group. The grouped view has its
+    own endpoint (get_pending_party_group_invoices); a caller who wants the
+    group-wide view must pick the group in the dropdown.
+
+    Response mirrors _pending_grouped_invoices so the payment pages can render
+    either kind with the same code:
+        {parties, invoices, by_party, total_outstanding, group}
     """
     if party_type not in ("Customer", "Supplier"):
-        return []
+        return {"parties": [], "invoices": [], "by_party": {}, "total_outstanding": 0,
+                "group": "", "advance_balance": 0, "carry_applied_total": 0}
+    if not company or not party:
+        return {"parties": [], "invoices": [], "by_party": {}, "total_outstanding": 0,
+                "group": "", "advance_balance": 0, "carry_applied_total": 0}
+
     doctype = "Sales Invoice" if party_type == "Customer" else "Purchase Invoice"
     party_field = "customer" if party_type == "Customer" else "supplier"
+    party_name = _display_name(party_type, party)
 
     invoices = frappe.get_all(
         doctype,
         filters={"company": company, party_field: party, "docstatus": 1, "outstanding_amount": [">", 0.01]},
-        fields=["name", "posting_date", "due_date", "grand_total", "outstanding_amount"],
+        fields=["name", party_field, "posting_date", "due_date", "grand_total", "outstanding_amount"],
         order_by="posting_date asc, name asc",
     )
+    for inv in invoices:
+        inv["party_name"] = party_name
 
     total = sum(flt(i.outstanding_amount) for i in invoices)
-    return {"invoices": invoices, "total_outstanding": total}
+    carry_summary = _attach_carry(company, party_type, invoices)
+    carry_total = sum(flt(v) for p in carry_summary.values() for v in p["per_invoice"].values())
+    advance_balance = flt(carry_summary.get(party, {}).get("balance", 0.0)) if invoices else 0.0
+    by_party = {}
+    if invoices:
+        by_party[party] = {
+            "party": party,
+            "party_name": party_name,
+            "party_type": party_type,
+            "invoices": invoices,
+            "total": total,
+            "advance_balance": advance_balance,
+            "carry_applied_total": round(carry_total, 2),
+        }
+
+    return {
+        "parties": [_party_ref(party_type, party)] if invoices else [],
+        "invoices": invoices,
+        "by_party": by_party,
+        "total_outstanding": total,
+        "group": "",
+        "advance_balance": advance_balance,
+        "carry_applied_total": round(carry_total, 2),
+    }
 
 
 @frappe.whitelist()
@@ -234,6 +271,8 @@ def _pending_grouped_invoices(company, party_type, party):
         inv["party_name"] = name_to_party.get(inv.get(party_field)) or inv.get(party_field)
 
     total = sum(flt(i.outstanding_amount) for i in invoices)
+    carry_summary = _attach_carry(company, party_type, invoices)
+    carry_total = sum(flt(v) for p in carry_summary.values() for v in p["per_invoice"].values())
 
     # Per-member subtotals, so group mode can show what each member owes before
     # the run happens rather than only the group total.
@@ -241,9 +280,14 @@ def _pending_grouped_invoices(company, party_type, party):
     for inv in invoices:
         key = inv.get(party_field)
         entry = by_party.setdefault(key, {"party": key, "party_name": inv["party_name"],
-                                          "party_type": party_type, "invoices": [], "total": 0.0})
+                                          "party_type": party_type, "invoices": [], "total": 0.0,
+                                          "advance_balance": 0.0, "carry_applied_total": 0.0})
         entry["invoices"].append(inv)
         entry["total"] += flt(inv.outstanding_amount)
+    for key, entry in by_party.items():
+        plan = carry_summary.get(key) or {}
+        entry["advance_balance"] = round(flt(plan.get("balance", 0.0)), 2)
+        entry["carry_applied_total"] = round(sum(flt(v) for v in (plan.get("per_invoice") or {}).values()), 2)
 
     return {
         "parties": parties,
@@ -252,6 +296,7 @@ def _pending_grouped_invoices(company, party_type, party):
         "by_party": by_party,
         "total_outstanding": total,
         "group": group_name,
+        "carry_applied_total": round(carry_total, 2),
     }
 
 
@@ -263,8 +308,13 @@ def create_bulk_supplier_payment(data):
 
     data = {
         company, posting_date, mode_of_payment, reference_no, reference_date,
-        items: [{name (Purchase Invoice), supplier, pay_amount}]
+        items: [{name (Purchase Invoice), supplier, pay_amount, tds, advance}]
     }
+
+    Per-row TDS/advance: each row may carry its own tds and advance box
+    values; an amount above the invoice's outstanding becomes row advance
+    (auto-excess). The party's oldest unallocated advance is auto-applied
+    first (carry-forward, reconciliation-style).
     """
     if isinstance(data, str):
         data = json.loads(data)
@@ -289,16 +339,14 @@ def create_bulk_supplier_payment(data):
             frappe.throw(_("Invoice {0} is not a submitted Purchase Invoice").format(it.get("name")))
         if pi.supplier != it.get("supplier"):
             frappe.throw(_("Invoice {0} does not belong to supplier {1}").format(it.get("name"), it.get("supplier")))
-        if pay_amount > flt(pi.outstanding_amount) + 0.01:
-            frappe.throw(
-                _("Payment for {0} (Rs. {1}) exceeds its outstanding amount (Rs. {2})").format(
-                    it.get("name"), pay_amount, pi.outstanding_amount
-                )
-            )
+        # No pay > outstanding guard here: an amount above the invoice's
+        # outstanding is booked as per-row advance (auto-excess) by the maker.
         validated.append({
             "name": it.get("name"),
             "supplier": pi.supplier,
             "pay_amount": pay_amount,
+            "tds": flt(it.get("tds")),
+            "advance": flt(it.get("advance")),
             "grand_total": flt(pi.grand_total),
             "outstanding_amount": flt(pi.outstanding_amount),
         })
@@ -318,6 +366,10 @@ def create_bulk_supplier_payment(data):
             "supplier_name": frappe.db.get_value("Supplier", supplier, "supplier_name") or supplier,
             "payment_entry": pe.name,
             "amount": pe.paid_amount,
+            "allocated": getattr(pe, "fe_total_allocated", 0.0),
+            "tds": getattr(pe, "fe_total_tds", 0.0),
+            "advance": getattr(pe, "fe_total_advance", 0.0),
+            "carry_applied": getattr(pe, "fe_carry_applied", 0.0),
         })
 
     return {
@@ -328,7 +380,55 @@ def create_bulk_supplier_payment(data):
 
 
 def _make_supplier_payment(company, supplier, rows, data):
-    total = sum(flt(r["pay_amount"]) for r in rows)
+    # Carry-forward first: the supplier's oldest unallocated advance is
+    # reconciled against the selected invoices, inside this transaction.
+    _apply_advance_to_rows(company, "Supplier", supplier, rows)
+    carry_total = sum(flt(r.get("carry_applied") or 0) for r in rows)
+
+    # Per-invoice books. O' is the invoice's outstanding after carry-forward;
+    # the reference allocates min(pay, O') and any excess becomes row advance
+    # (auto-excess), so a To Pay above outstanding never overpays the bill.
+    allocations = []
+    total_alloc = 0.0
+    total_tds = 0.0
+    total_advance = 0.0
+    for r in rows:
+        eff = max(flt(r["outstanding_amount"]) - flt(r.get("carry_applied") or 0), 0.0)
+        alloc = min(flt(r["pay_amount"]), eff)
+        excess = flt(r["pay_amount"]) - alloc
+        tds = flt(r.get("tds"))
+        if tds > eff + 0.01:
+            frappe.throw(
+                _("TDS (Rs. {0}) for {1} cannot exceed its outstanding (Rs. {2}). Reduce the TDS amount.").format(
+                    tds, r["name"], eff
+                )
+            )
+        adv = flt(r.get("advance")) + max(excess, 0.0)
+        allocations.append({
+            "name": r["name"],
+            "outstanding": eff,
+            "allocated": alloc,
+            "tds": tds,
+            "advance": adv,
+            "grand_total": flt(r["grand_total"]),
+        })
+        total_alloc += alloc
+        total_tds += tds
+        total_advance += adv
+
+    # Verified construction (supplier / Pay), generalised to per-bill sums:
+    #   paid_amount = total_allocated + total_advance - total_tds
+    #   deductions = one row per bill with TDS, posted as NEGATIVE so the
+    #   general ledger credits TDS Payable (tax withheld and owed to the
+    #   government) instead of debiting it. ERPNext flips negative debit
+    #   legs to credits (toggle_debit_credit_if_negative), so the books read:
+    #   Dr Payable (alloc + advance) = Cr Bank (net paid) + Cr TDS Payable.
+    # References allocate the residual after carry-forward, so each invoice
+    # outstanding goes to zero across the old advance PEs + this PE; the
+    # advance becomes the unallocated (on-account) remainder.
+    paid_amount = total_alloc + total_advance - total_tds
+    if paid_amount <= 0:
+        frappe.throw(_("TDS ({0}) exceeds payable + advance ({1}). Reduce the TDS amount.").format(total_tds, total_alloc + total_advance))
 
     pe = frappe.new_doc("Payment Entry")
     pe.company = company
@@ -337,8 +437,8 @@ def _make_supplier_payment(company, supplier, rows, data):
     pe.party = supplier
     pe.posting_date = getdate(data.get("posting_date")) or frappe.utils.today()
     pe.mode_of_payment = data.get("mode_of_payment") or _default_mode_of_payment(company)
-    pe.paid_amount = total
-    pe.received_amount = total
+    pe.paid_amount = paid_amount
+    pe.received_amount = paid_amount
     pe.source_exchange_rate = 1
     pe.target_exchange_rate = 1
     pe.reference_no = data.get("reference_no") or ("BULK-" + frappe.generate_hash(5).upper())
@@ -352,19 +452,39 @@ def _make_supplier_payment(company, supplier, rows, data):
     pe.paid_from = default_bank
     pe.paid_to = _supplier_payable_account(company, supplier)
 
-    for r in rows:
+    for a in allocations:
+        if a["allocated"] <= 0.01:
+            continue
         pe.append("references", {
             "reference_doctype": "Purchase Invoice",
-            "reference_name": r["name"],
-            "total_amount": r["grand_total"],
-            "outstanding_amount": r["outstanding_amount"],
-            "allocated_amount": r["pay_amount"],
+            "reference_name": a["name"],
+            "total_amount": a["grand_total"],
+            "outstanding_amount": a["outstanding"],
+            "allocated_amount": a["allocated"],
         })
+
+    if total_tds > 0:
+        # Throws naming the exact TDS Payable account to create when missing.
+        account = _tds_account(company, "Supplier")
+        cost_center = _payment_cost_center(company)
+        for a in allocations:
+            if a["tds"] > 0:
+                pe.append("deductions", {
+                    "account": account,
+                    # Negative: books Cr TDS Payable (withheld tax owed),
+                    # so the bank pays the invoice net of TDS.
+                    "amount": -a["tds"],
+                    "cost_center": cost_center,
+                })
 
     pe.flags.ignore_permissions = True
     pe.flags.ignore_links = True
     pe.save(ignore_permissions=True)
     pe.submit()
+    pe.fe_total_allocated = total_alloc
+    pe.fe_total_tds = total_tds
+    pe.fe_total_advance = total_advance
+    pe.fe_carry_applied = carry_total
     return pe
 
 
@@ -378,6 +498,225 @@ def _supplier_payable_account(company, supplier):
     if acc:
         return acc
     return frappe.db.get_value("Company", company, "default_payable_account") or _first_account(company, "Payable")
+
+
+def _tds_account(company, party_type):
+    """Direction-correct TDS account, strictly enforced (no silent fallback).
+
+    Customer/Receive -> TDS Receivable - <abbr>; Supplier/Pay ->
+    TDS Payable - <abbr>. Throws naming the exact account to create when it
+    is missing, so TDS can never post to the wrong-direction account.
+    """
+    abbr = frappe.db.get_value("Company", company, "abbr")
+    expected = (f"TDS Receivable - {abbr}" if party_type == "Customer"
+                else f"TDS Payable - {abbr}")
+    if frappe.db.exists("Account", expected):
+        return expected
+    frappe.throw(
+        _("TDS entered but '{0}' does not exist for company {1}. Create the '{0}' account first.").format(
+            expected, company
+        )
+    )
+
+
+def _payment_cost_center(company):
+    """Company default cost center, else the first non-group one."""
+    cc = frappe.db.get_value("Company", company, "cost_center")
+    if cc:
+        return cc
+    return frappe.db.get_value(
+        "Cost Center", {"is_group": 0, "company": company}, "name", order_by="name asc"
+    )
+
+
+def _party_advance_balance(company, party_type, party):
+    """Unallocated advance held in this party's submitted Payment Entries.
+
+    A Payment Entry is an advance holder when it still has unallocated_amount
+    > 0.01. Only the matching direction counts (Receive for Customer, Pay for
+    Supplier). Oldest first (posting_date, creation) so carry-forward consumes
+    the oldest advance before newer ones.
+    """
+    payment_type = "Receive" if party_type == "Customer" else "Pay"
+    entries = frappe.get_all(
+        "Payment Entry",
+        filters={
+            "company": company,
+            "party_type": party_type,
+            "party": party,
+            "payment_type": payment_type,
+            "docstatus": 1,
+            "unallocated_amount": [">", 0.01],
+        },
+        fields=["name", "posting_date", "creation", "unallocated_amount"],
+        order_by="posting_date asc, creation asc",
+    )
+    return {"total": sum(flt(e.unallocated_amount) for e in entries), "entries": entries}
+
+
+def _carry_plan(company, party_type, party, invoices):
+    """How the party's unallocated advance would auto-apply to its pending
+    invoices, oldest invoice first (reconciliation-style carry-forward).
+
+    `invoices` must be the party's FULL pending list, oldest first, each with
+    name / grand_total / outstanding_amount. Pure computation - no DB writes.
+    Returns {balance, applied_total, remaining_balance, per_invoice, entries}
+    where entries are frappe._dict rows ready for reconcile_against_document.
+    """
+    bal = _party_advance_balance(company, party_type, party)
+    plan = {
+        "balance": flt(bal["total"]),
+        "applied_total": 0.0,
+        "remaining_balance": flt(bal["total"]),
+        "per_invoice": {},
+        "entries": [],
+    }
+    if not bal["entries"] or not invoices:
+        return plan
+
+    doctype = "Sales Invoice" if party_type == "Customer" else "Purchase Invoice"
+    if party_type == "Customer":
+        account = frappe.db.get_value("Company", company, "default_receivable_account") or _first_account(company, "Receivable")
+    else:
+        account = _supplier_payable_account(company, party)
+
+    remaining_by_inv = {}
+    for inv in invoices:
+        remaining_by_inv[inv["name"]] = flt(inv.get("outstanding_amount"))
+
+    for pe in bal["entries"]:
+        rem = flt(pe.unallocated_amount)
+        if rem <= 0.01:
+            continue
+        for inv in invoices:
+            if rem <= 0.01:
+                break
+            avail = remaining_by_inv.get(inv["name"], 0.0)
+            if avail <= 0.01:
+                continue
+            take = min(rem, avail)
+            plan["entries"].append(frappe._dict({
+                "voucher_type": "Payment Entry",
+                "voucher_no": pe.name,
+                "against_voucher_type": doctype,
+                "against_voucher": inv["name"],
+                "account": account,
+                "party_type": party_type,
+                "party": party,
+                "allocated_amount": take,
+                # Both checks in reconcile_against_document run pre-save against
+                # DB state, so every entry carries the PE's full unallocated.
+                "unreconciled_amount": flt(pe.unallocated_amount),
+                "unadjusted_amount": flt(pe.unallocated_amount),
+                "grand_total": flt(inv.get("grand_total")),
+                "outstanding_amount": avail,
+                "exchange_rate": 1,
+            }))
+            remaining_by_inv[inv["name"]] = avail - take
+            plan["per_invoice"][inv["name"]] = plan["per_invoice"].get(inv["name"], 0.0) + take
+            plan["applied_total"] += take
+            rem -= take
+
+    plan["remaining_balance"] = flt(plan["balance"] - plan["applied_total"])
+    return plan
+
+
+def _attach_carry(company, party_type, invoices):
+    """Attach advance/carry fields to each invoice dict in place.
+
+    Groups `invoices` per party and runs the same oldest-first plan the makers
+    use, so the UI's effective outstanding always agrees with the server:
+      inv.advance_balance        - party's total unallocated advance
+      inv.carry_applied          - advance auto-applied to THIS invoice
+      inv.effective_outstanding  - outstanding_amount - carry_applied
+    Returns {party: plan}.
+    """
+    key_field = "customer" if party_type == "Customer" else "supplier"
+    by_party = {}
+    order = []
+    for inv in invoices:
+        key = inv.get(key_field)
+        if key not in by_party:
+            by_party[key] = []
+            order.append(key)
+        by_party[key].append(inv)
+
+    summary = {}
+    for key in order:
+        plan = _carry_plan(company, party_type, key, by_party[key])
+        summary[key] = plan
+        for inv in by_party[key]:
+            carry = round(flt(plan["per_invoice"].get(inv["name"], 0.0)), 2)
+            inv["advance_balance"] = round(flt(plan["balance"]), 2)
+            inv["carry_applied"] = carry
+            inv["effective_outstanding"] = round(max(flt(inv.get("outstanding_amount")) - carry, 0.0), 2)
+    return summary
+
+
+def _reconcile_entries(entries):
+    """Append the given carry entries to their old advance Payment Entries."""
+    if not entries:
+        return
+    from erpnext.accounts.utils import reconcile_against_document
+
+    reconcile_against_document(entries)
+
+
+def _apply_advance_to_rows(company, party_type, party, rows):
+    """Auto-apply the party's oldest unallocated advance to the SELECTED rows.
+
+    The plan is computed against the party's FULL pending list (so the amounts
+    match what the UI showed), but only entries for the selected rows are
+    applied. Runs inside the current transaction, atomic with the new PE.
+    Stamps each row's `carry_applied`; returns the full plan.
+    """
+    selected = {r["name"] for r in rows}
+    pending = get_pending_invoices(company, party_type, party).get("invoices") or []
+    plan = _carry_plan(company, party_type, party, pending)
+    entries = [e for e in plan["entries"] if e["against_voucher"] in selected]
+    _reconcile_entries(entries)
+    carried = {}
+    for e in entries:
+        carried[e["against_voucher"]] = carried.get(e["against_voucher"], 0.0) + flt(e["allocated_amount"])
+    for r in rows:
+        r["carry_applied"] = round(flt(carried.get(r["name"], 0.0)), 2)
+    return plan
+
+
+def _distribute_group_tds_advance(data, prepared):
+    """Split a single TDS / Advance figure across the group's member PEs.
+
+    Only members that pay invoices receive a share; a purely on-account member
+    (no invoice rows) keeps just its own advance, so the entered totals are not
+    double counted. Shares are proportional to each member's invoice allocation,
+    with the rounding remainder landed on the last paying member so the sum of
+    per-entry tds/advance equals exactly what the user entered.
+    """
+    tds_total = flt(data.get("tds"))
+    advance_total = flt(data.get("advance"))
+    share_base = sum(flt(p["pay_amount"]) for p in prepared if p["rows"])
+    if share_base <= 0 or not (tds_total or advance_total):
+        return {p["party"]: {"tds": 0.0, "advance": 0.0} for p in prepared}
+
+    paying = [p for p in prepared if p["rows"]]
+    out = {}
+    tds_left = tds_total
+    advance_left = advance_total
+    for idx, p in enumerate(paying):
+        is_last = idx == len(paying) - 1
+        if is_last:
+            out[p["party"]] = {"tds": round(tds_left, 2), "advance": round(advance_left, 2)}
+            continue
+        share = flt(p["pay_amount"]) / share_base
+        member_tds = round(tds_total * share, 2)
+        member_advance = round(advance_total * share, 2)
+        out[p["party"]] = {"tds": member_tds, "advance": member_advance}
+        tds_left = round(tds_left - member_tds, 2)
+        advance_left = round(advance_left - member_advance, 2)
+
+    for p in prepared:
+        out.setdefault(p["party"], {"tds": 0.0, "advance": 0.0})
+    return out
 
 
 @frappe.whitelist()
@@ -395,8 +734,13 @@ def create_bulk_customer_payment(data):
 
     data = {
         company, posting_date, mode_of_payment, reference_no, reference_date,
-        items: [{name (Sales Invoice), customer, pay_amount}]
+        items: [{name (Sales Invoice), customer, pay_amount, tds, advance}]
     }
+
+    Per-row TDS/advance: each row may carry its own tds and advance box
+    values; an amount above the invoice's outstanding becomes row advance
+    (auto-excess). The party's oldest unallocated advance is auto-applied
+    first (carry-forward, reconciliation-style).
     """
     if isinstance(data, str):
         data = json.loads(data)
@@ -421,16 +765,14 @@ def create_bulk_customer_payment(data):
             frappe.throw(_("Invoice {0} is not a submitted Sales Invoice").format(it.get("name")))
         if si.customer != it.get("customer"):
             frappe.throw(_("Invoice {0} does not belong to customer {1}").format(it.get("name"), it.get("customer")))
-        if pay_amount > flt(si.outstanding_amount) + 0.01:
-            frappe.throw(
-                _("Payment for {0} (Rs. {1}) exceeds its outstanding amount (Rs. {2})").format(
-                    it.get("name"), pay_amount, si.outstanding_amount
-                )
-            )
+        # No pay > outstanding guard here: an amount above the invoice's
+        # outstanding is booked as per-row advance (auto-excess) by the maker.
         validated.append({
             "name": it.get("name"),
             "customer": si.customer,
             "pay_amount": pay_amount,
+            "tds": flt(it.get("tds")),
+            "advance": flt(it.get("advance")),
             "grand_total": flt(si.grand_total),
             "outstanding_amount": flt(si.outstanding_amount),
         })
@@ -450,6 +792,10 @@ def create_bulk_customer_payment(data):
             "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
             "payment_entry": pe.name,
             "amount": pe.paid_amount,
+            "allocated": getattr(pe, "fe_total_allocated", 0.0),
+            "tds": getattr(pe, "fe_total_tds", 0.0),
+            "advance": getattr(pe, "fe_total_advance", 0.0),
+            "carry_applied": getattr(pe, "fe_carry_applied", 0.0),
         })
 
     return {
@@ -460,7 +806,48 @@ def create_bulk_customer_payment(data):
 
 
 def _make_customer_payment(company, customer, rows, data):
-    total = sum(flt(r["pay_amount"]) for r in rows)
+    # Carry-forward first: the customer's oldest unallocated advance is
+    # reconciled against the selected invoices, inside this transaction.
+    _apply_advance_to_rows(company, "Customer", customer, rows)
+    carry_total = sum(flt(r.get("carry_applied") or 0) for r in rows)
+
+    # Per-invoice books. O' is the invoice's outstanding after carry-forward;
+    # the reference allocates min(pay, O') and any excess becomes row advance
+    # (auto-excess), so a To Receive above outstanding never overpays the bill.
+    allocations = []
+    total_alloc = 0.0
+    total_tds = 0.0
+    total_advance = 0.0
+    for r in rows:
+        eff = max(flt(r["outstanding_amount"]) - flt(r.get("carry_applied") or 0), 0.0)
+        alloc = min(flt(r["pay_amount"]), eff)
+        excess = flt(r["pay_amount"]) - alloc
+        tds = flt(r.get("tds"))
+        if tds > eff + 0.01:
+            frappe.throw(
+                _("TDS (Rs. {0}) for {1} cannot exceed its outstanding (Rs. {2}). Reduce the TDS amount.").format(
+                    tds, r["name"], eff
+                )
+            )
+        adv = flt(r.get("advance")) + max(excess, 0.0)
+        allocations.append({
+            "name": r["name"],
+            "outstanding": eff,
+            "allocated": alloc,
+            "tds": tds,
+            "advance": adv,
+            "grand_total": flt(r["grand_total"]),
+        })
+        total_alloc += alloc
+        total_tds += tds
+        total_advance += adv
+
+    # Verified construction (customer / Receive), generalised to per-bill sums:
+    #   paid_amount = total_allocated + total_advance - total_tds
+    #   deductions = one row per bill with TDS
+    paid_amount = total_alloc + total_advance - total_tds
+    if paid_amount <= 0:
+        frappe.throw(_("TDS ({0}) exceeds receivable + advance ({1}). Reduce the TDS amount.").format(total_tds, total_alloc + total_advance))
 
     pe = frappe.new_doc("Payment Entry")
     pe.company = company
@@ -469,8 +856,8 @@ def _make_customer_payment(company, customer, rows, data):
     pe.party = customer
     pe.posting_date = getdate(data.get("posting_date")) or frappe.utils.today()
     pe.mode_of_payment = data.get("mode_of_payment") or _default_mode_of_payment(company)
-    pe.paid_amount = total
-    pe.received_amount = total
+    pe.paid_amount = paid_amount
+    pe.received_amount = paid_amount
     pe.source_exchange_rate = 1
     pe.target_exchange_rate = 1
     pe.reference_no = data.get("reference_no") or ("BULK-" + frappe.generate_hash(5).upper())
@@ -485,19 +872,37 @@ def _make_customer_payment(company, customer, rows, data):
     pe.paid_from = default_receivable
     pe.paid_to = default_bank
 
-    for r in rows:
+    for a in allocations:
+        if a["allocated"] <= 0.01:
+            continue
         pe.append("references", {
             "reference_doctype": "Sales Invoice",
-            "reference_name": r["name"],
-            "total_amount": r["grand_total"],
-            "outstanding_amount": r["outstanding_amount"],
-            "allocated_amount": r["pay_amount"],
+            "reference_name": a["name"],
+            "total_amount": a["grand_total"],
+            "outstanding_amount": a["outstanding"],
+            "allocated_amount": a["allocated"],
         })
+
+    if total_tds > 0:
+        # Throws naming the exact TDS Receivable account to create when missing.
+        account = _tds_account(company, "Customer")
+        cost_center = _payment_cost_center(company)
+        for a in allocations:
+            if a["tds"] > 0:
+                pe.append("deductions", {
+                    "account": account,
+                    "amount": a["tds"],
+                    "cost_center": cost_center,
+                })
 
     pe.flags.ignore_permissions = True
     pe.flags.ignore_links = True
     pe.save(ignore_permissions=True)
     pe.submit()
+    pe.fe_total_allocated = total_alloc
+    pe.fe_total_tds = total_tds
+    pe.fe_total_advance = total_advance
+    pe.fe_carry_applied = carry_total
     return pe
 
 @frappe.whitelist()
@@ -542,6 +947,8 @@ def search_payment_parties(party_type, search=None, limit=40):
     )
     out = []
     for g in groups:
+        if g.get("group_type") and g.get("group_type") != "Both" and g.get("group_type") != party_type:
+            continue
         members = _group_members(party_type, g["name"])
         if not members:
             continue
@@ -593,8 +1000,12 @@ def create_party_group_payment(data):
     data = {
         company, party_type, group, posting_date, mode_of_payment,
         reference_no, reference_date, remarks,
-        items: [{party, pay_amount, invoices: [{name, pay_amount}]}]
+        items: [{party, pay_amount, invoices: [{name, pay_amount, tds, advance}]}]
     }
+
+    Per-row TDS/advance ride on the invoice rows (see the bulk makers); the
+    whole-run data.tds/data.advance split survives only as a fallback for
+    stale cached pages that send no per-row figures.
     """
     if isinstance(data, str):
         data = json.loads(data)
@@ -639,15 +1050,13 @@ def create_party_group_payment(data):
                 frappe.throw(_("Invoice {0} is not a submitted {1}").format(ref.get("name"), invoice_doctype))
             if inv.get(party_field) != party:
                 frappe.throw(_("Invoice {0} does not belong to {1}").format(ref.get("name"), party))
-            if pay_amount > flt(inv.outstanding_amount) + 0.01:
-                frappe.throw(
-                    _("Payment for {0} (Rs. {1}) exceeds its outstanding amount (Rs. {2})").format(
-                        ref.get("name"), pay_amount, inv.outstanding_amount
-                    )
-                )
+            # No pay > outstanding guard: an amount above outstanding is
+            # booked as per-row advance (auto-excess) by the maker.
             rows.append({
                 "name": ref.get("name"),
                 "pay_amount": pay_amount,
+                "tds": flt(ref.get("tds")),
+                "advance": flt(ref.get("advance")),
                 "grand_total": flt(inv.grand_total),
                 "outstanding_amount": flt(inv.outstanding_amount),
             })
@@ -683,13 +1092,26 @@ def create_party_group_payment(data):
     shared = dict(data)
     shared["remarks"] = data.get("remarks") or "Group payment for {0} via Fast Entry".format(group)
 
+    # Per-row TDS/advance ride on the invoice rows now. Fall back to the old
+    # whole-run split only for callers that still send data.tds/data.advance
+    # with no per-row figures (stale cached page); the share lands on the
+    # member's first row, which is bookkeeping-equivalent for the PE totals.
+    rowwise = any(flt(r.get("tds")) or flt(r.get("advance")) for p in prepared for r in p["rows"])
+    if not rowwise and (flt(data.get("tds")) or flt(data.get("advance"))):
+        tds_advance = _distribute_group_tds_advance(data, prepared)
+        for p in prepared:
+            if p["rows"]:
+                p["rows"][0]["tds"] = flt(p["rows"][0].get("tds")) + tds_advance[p["party"]]["tds"]
+                p["rows"][0]["advance"] = flt(p["rows"][0].get("advance")) + tds_advance[p["party"]]["advance"]
+
     payments = []
     for p in prepared:
+        member_data = dict(shared)
         if p["rows"]:
             maker = _make_customer_payment if party_type == "Customer" else _make_supplier_payment
-            pe = maker(company, p["party"], p["rows"], shared)
+            pe = maker(company, p["party"], p["rows"], member_data)
         else:
-            pe = _make_advance_payment(company, party_type, p["party"], p["pay_amount"], shared)
+            pe = _make_advance_payment(company, party_type, p["party"], p["pay_amount"], member_data)
         payments.append({
             "party": p["party"],
             "party_name": p["party_name"],
@@ -697,6 +1119,10 @@ def create_party_group_payment(data):
             "paid_amount": flt(pe.paid_amount),
             "invoice_count": p["invoice_count"],
             "outstanding_before": p["outstanding_before"],
+            "allocated": getattr(pe, "fe_total_allocated", 0.0),
+            "tds": getattr(pe, "fe_total_tds", 0.0),
+            "advance": getattr(pe, "fe_total_advance", 0.0),
+            "carry_applied": getattr(pe, "fe_carry_applied", 0.0),
         })
 
     pgp = frappe.new_doc("Party Group Payment")
