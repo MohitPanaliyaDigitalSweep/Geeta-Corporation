@@ -1,6 +1,6 @@
 {
-  "name": "Fast Entry PWA",
-  "short_name": "Fast Entry",
+  "name": "Geeta Corporation",
+  "short_name": "Geeta Corp",
   "description": "Fast Sales & Purchase Entry for ERPNext",
   "start_url": "/sales_pwa",
   "scope": "/sales_pwa",

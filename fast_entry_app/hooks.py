@@ -1,5 +1,5 @@
 app_name = "fast_entry_app"
-app_title = "Fast Entry App"
+app_title = "Geeta Corporation"
 app_publisher = "developers@fastentry.local"
 app_description = "Fast Purchase and Sales Entry for ERPNext"
 app_email = "developers@fastentry.local"
@@ -15,7 +15,7 @@ required_apps = ["erpnext"]
 add_to_apps_screen = [
     {
         "name": "fast_entry_app",
-        "title": "Fast Entry",
+        "title": "Geeta Corporation",
         "route": "/app/fast-purchase-entry",
         "logo": "/assets/fast_entry_app/icons/desktop_icons/solid/fast_entry.svg",
     }
@@ -72,7 +72,7 @@ fixtures = [
     },
     {
         "dt": "Workspace Sidebar",
-        "filters": [["name", "=", "Fast Entry"]],
+        "filters": [["name", "=", "Geeta Corporation"]],
     },
     {
         "dt": "Print Format",

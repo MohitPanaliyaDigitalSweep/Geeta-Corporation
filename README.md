@@ -1,4 +1,4 @@
-# Geeta Corporation — Fast Entry App
+# Geeta Corporation
 
 ERPNext app (Frappe **v16**) that turns purchase, sales, quotation, payment, stock, ledger and reporting workflows into a fast, keyboard-friendly, single-page experience. Includes custom print formats with e-Invoice / e-Waybill QR support, Party Group management, per-bill TDS/advance payments with carry-forward, bill-level discount modes, WhatsApp sending via a self-hosted gateway, a standalone sales PWA, and a full BI report suite.
 

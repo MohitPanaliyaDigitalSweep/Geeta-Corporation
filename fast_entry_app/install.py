@@ -22,7 +22,32 @@ def after_install():
 	from fast_entry_app.setup_custom_fields import execute
 
 	execute()
+	_rename_sidebar_and_icon()
 	setup_gst_sandbox()
+
+
+def _rename_sidebar_and_icon():
+	"""One-time rename Fast Entry -> Geeta Corporation on existing sites.
+
+	Fresh installs get the new names straight from fixtures. On upgrade,
+	fixture sync inserts the renamed docs alongside the old ones, so converge
+	here: rename the old doc when only it exists, delete it when both do.
+	"""
+	new, old = "Geeta Corporation", "Fast Entry"
+	new_icon, old_icon = "Geeta Corporation", "Fast Entry App"
+	try:
+		if frappe.db.exists("Workspace Sidebar", new):
+			if frappe.db.exists("Workspace Sidebar", old):
+				frappe.delete_doc("Workspace Sidebar", old, force=True)
+		elif frappe.db.exists("Workspace Sidebar", old):
+			frappe.rename_doc("Workspace Sidebar", old, new)
+		if frappe.db.exists("Desktop Icon", new_icon):
+			if frappe.db.exists("Desktop Icon", old_icon):
+				frappe.delete_doc("Desktop Icon", old_icon, force=True)
+		elif frappe.db.exists("Desktop Icon", old_icon):
+			frappe.rename_doc("Desktop Icon", old_icon, new_icon)
+	except Exception:
+		frappe.log_error(title="fast_entry_app: sidebar/icon rename")
 
 
 def setup_gst_sandbox():
