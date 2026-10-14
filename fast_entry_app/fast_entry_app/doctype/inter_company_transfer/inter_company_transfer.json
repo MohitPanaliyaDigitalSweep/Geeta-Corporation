@@ -76,7 +76,8 @@
    "fieldname": "posting_date",
    "fieldtype": "Date",
    "label": "Posting Date",
-   "reqd": 1
+   "reqd": 1,
+   "in_list_view": 1
   },
   {
    "allow_on_submit": 1,
@@ -84,7 +85,8 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Draft\nSubmitted\nTransfer Created\nCancelled",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1
   },
   {
    "collapsible": 0,
@@ -142,6 +144,34 @@
    "read_only": 1
   },
   {
+   "fieldname": "total_box",
+   "fieldtype": "Float",
+   "label": "Total Box",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "total_pcs",
+   "fieldtype": "Float",
+   "label": "Total PCS",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "total_ltr",
+   "fieldtype": "Float",
+   "label": "Total LTR",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "total_tax",
+   "fieldtype": "Currency",
+   "label": "Total Tax",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
    "fieldname": "base_grand_total",
    "fieldtype": "Currency",
    "label": "Base Grand Total",
@@ -153,7 +183,8 @@
    "fieldtype": "Currency",
    "label": "Grand Total",
    "options": "currency",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "amended_from",

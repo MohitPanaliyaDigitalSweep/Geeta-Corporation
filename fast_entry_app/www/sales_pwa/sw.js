@@ -1,4 +1,4 @@
-const CACHE = "fast-entry-pwa-v2";
+const CACHE = "fast-entry-pwa-v3";
 const SHELL = [
   "/sales_pwa",
   "/assets/fast_entry_app/pwa/icons/icon-192.png",

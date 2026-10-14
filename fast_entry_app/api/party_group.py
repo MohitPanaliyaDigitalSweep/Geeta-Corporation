@@ -155,10 +155,12 @@ def _default_mode_of_payment(company):
 
 
 def _first_bank_account(company):
-    acc = frappe.db.get_value("Account", {"company": company, "account_type": "Bank", "is_group": 0}, "name")
-    if acc:
-        return acc
-    return frappe.db.get_value("Account", {"company": company, "account_type": "Bank"}, "name")
+    """First leaf Bank account of the company (never a group account)."""
+    return frappe.db.get_value(
+        "Account",
+        {"company": company, "account_type": "Bank", "is_group": 0},
+        "name",
+    )
 
 
 def _first_account(company, account_type):

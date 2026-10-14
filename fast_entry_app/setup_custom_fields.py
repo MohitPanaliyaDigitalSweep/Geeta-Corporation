@@ -50,6 +50,13 @@ PROPERTY_SETTERS = [
 	# service / consolidated invoices).
 	("Sales Invoice", "update_stock", "default", "1", "Check"),
 	("Purchase Invoice", "update_stock", "default", "1", "Check"),
+	# A collapsible Section Break with no collapsible_depends_on renders
+	# COLLAPSED by default (frappe/public/js/frappe/form/layout.js:500-511:
+	# `collapse = true` unless the depends_on expression is truthy). The
+	# "Additional Discount" section holds discount_amount + apply_discount_on,
+	# so it was hidden on the standard Sales Invoice form. Auto-expand it
+	# whenever a discount is present so the Net Total / discount is visible.
+	("Sales Invoice", "additional_discount_section", "collapsible_depends_on", "eval:doc.discount_amount", "Data"),
 ]
 
 
@@ -175,9 +182,30 @@ _UPDATABLE = (
 )
 
 
+def _purchase_invoice_fields():
+	"""Fingerprint used to stop double saves on Purchase Invoices."""
+	return [
+		{
+			"dt": "Purchase Invoice",
+			"fieldname": "fe_dedup_key",
+			"fieldtype": "Data",
+			"label": "Fast Entry Dedup Key",
+			"insert_after": "bill_no",
+			"module": MODULE,
+			"read_only": 1,
+			"hidden": 1,
+		},
+	]
+
+
 def get_field_definitions():
 	"""All app-owned custom fields, in creation order."""
-	return _item_table_fields() + _party_fields() + _sales_invoice_fields()
+	return (
+		_item_table_fields()
+		+ _party_fields()
+		+ _sales_invoice_fields()
+		+ _purchase_invoice_fields()
+	)
 
 
 def execute():

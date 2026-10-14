@@ -354,27 +354,39 @@ fast_entry_app.report_ui.export_csv = function (headers, rows, filename) {
 };
 
 /* ═══════════ CHART HELPERS ═══════════ */
-fast_entry_app.report_ui._charts = {};
+/* Resolve a target element for a chart/table. The desk keeps previously opened
+   pages attached to the DOM, and several report pages share the same generic
+   chart ids (e.g. #chart-item-amount, #chart-sp-amount). A plain
+   document.querySelector would return the stale hidden page's node, leaving the
+   currently visible chart blank. Prefer a visible match; fall back to the last
+   match (the most recently appended page). */
+fast_entry_app.report_ui._resolve_el = function (container) {
+    if (typeof container !== "string") return container || null;
+    const list = document.querySelectorAll(container);
+    if (!list.length) return null;
+    for (let i = 0; i < list.length; i++) {
+        if (list[i].offsetParent !== null) return list[i];
+    }
+    return list[list.length - 1];
+};
 
 fast_entry_app.report_ui._destroy_chart = function (container) {
-    const sel = typeof container === "string" ? container : null;
-    if (sel && fast_entry_app.report_ui._charts[sel]) {
-        try { fast_entry_app.report_ui._charts[sel].destroy(); } catch(e) {}
-        delete fast_entry_app.report_ui._charts[sel];
+    const el = fast_entry_app.report_ui._resolve_el(container);
+    if (!el) return;
+    if (el.__frmsChart) {
+        try { el.__frmsChart.destroy(); } catch (e) {}
+        el.__frmsChart = null;
     }
-    if (sel) {
-        const el = document.querySelector(sel);
-        if (el) el.innerHTML = "";
-    }
+    el.innerHTML = "";
 };
 
 fast_entry_app.report_ui.render_donut = function (container, labels, values, colors) {
     if (!labels || !labels.length) return;
     fast_entry_app.report_ui._destroy_chart(container);
     colors = colors || ["#4C6EF5", "#12B886", "#F59F00", "#E03131", "#7950F2", "#20C997", "#FD7E14", "#339AF0"];
-    const el = document.querySelector(container);
+    const el = fast_entry_app.report_ui._resolve_el(container);
     if (!el) return;
-    const chart = new frappe.Chart(el, {
+    el.__frmsChart = new frappe.Chart(el, {
         data: { labels, datasets: [{ values }] },
         type: "donut",
         colors,
@@ -383,16 +395,15 @@ fast_entry_app.report_ui.render_donut = function (container, labels, values, col
         format_tooltip_x: d => d,
         format_tooltip_y: v => "₹" + v.toLocaleString("en-IN"),
     });
-    fast_entry_app.report_ui._charts[container] = chart;
 };
 
 fast_entry_app.report_ui.render_bar = function (container, labels, values, opts) {
     opts = opts || {};
     if (!labels || !labels.length) return;
     fast_entry_app.report_ui._destroy_chart(container);
-    const el = document.querySelector(container);
+    const el = fast_entry_app.report_ui._resolve_el(container);
     if (!el) return;
-    const chart = new frappe.Chart(el, {
+    el.__frmsChart = new frappe.Chart(el, {
         data: { labels, datasets: [{ values: values.map(v => parseFloat(v) || 0) }] },
         type: "bar",
         height: opts.height || 220,
@@ -400,7 +411,6 @@ fast_entry_app.report_ui.render_bar = function (container, labels, values, opts)
         format_tooltip_x: d => d,
         format_tooltip_y: v => opts.currency ? "₹" + v.toLocaleString("en-IN") : v.toLocaleString("en-IN"),
     });
-    fast_entry_app.report_ui._charts[container] = chart;
 };
 
 fast_entry_app.report_ui.render_grouped_bar = function (container, labels, datasets, opts) {
@@ -408,9 +418,9 @@ fast_entry_app.report_ui.render_grouped_bar = function (container, labels, datas
     if (!labels || !labels.length) return;
     fast_entry_app.report_ui._destroy_chart(container);
     const colors = ["#4C6EF5", "#E03131", "#12B886", "#F59F00"];
-    const el = document.querySelector(container);
+    const el = fast_entry_app.report_ui._resolve_el(container);
     if (!el) return;
-    const chart = new frappe.Chart(el, {
+    el.__frmsChart = new frappe.Chart(el, {
         data: { labels, datasets },
         type: "bar",
         height: opts.height || 220,
@@ -418,16 +428,15 @@ fast_entry_app.report_ui.render_grouped_bar = function (container, labels, datas
         format_tooltip_x: d => d,
         format_tooltip_y: v => opts.currency ? "₹" + v.toLocaleString("en-IN") : v.toLocaleString("en-IN"),
     });
-    fast_entry_app.report_ui._charts[container] = chart;
 };
 
 fast_entry_app.report_ui.render_line = function (container, labels, values, opts) {
     opts = opts || {};
     if (!labels || !labels.length) return;
     fast_entry_app.report_ui._destroy_chart(container);
-    const el = document.querySelector(container);
+    const el = fast_entry_app.report_ui._resolve_el(container);
     if (!el) return;
-    const chart = new frappe.Chart(el, {
+    el.__frmsChart = new frappe.Chart(el, {
         data: { labels, datasets: [{ values: values.map(v => parseFloat(v) || 0) }] },
         type: "line",
         height: opts.height || 220,
@@ -435,5 +444,4 @@ fast_entry_app.report_ui.render_line = function (container, labels, values, opts
         format_tooltip_x: d => d,
         format_tooltip_y: v => opts.currency ? "₹" + v.toLocaleString("en-IN") : v.toLocaleString("en-IN"),
     });
-    fast_entry_app.report_ui._charts[container] = chart;
 };

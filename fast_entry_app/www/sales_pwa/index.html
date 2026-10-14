@@ -695,16 +695,17 @@
                     }
                 }
 
-                // ERPNext-exact totals, following the Disc On selector:
-                // - Net Total (default): discount off the bill net at bill
-                //   level, GST on the discounted net.
-                // - Grand Total: GST on the FULL pre-discount net (plus
-                //   freight when present), discount off the grand total.
+                // ERPNext-exact totals, mode-aware (Scenario A / Scenario B):
+                //   Net Total   -> discount reduces the taxable value first
+                //   Grand Total -> post-tax discount; GST stays on the full value
+                // GST is charged on (taxable + freight); grand = (sub - D) + freight + GST.
                 var applyOn = $("#f-disc-on").value || "Net Total";
-                var discBase = applyOn === "Net Total" ? sub - disc : sub;
-                var mainBase = discBase + (freight > 0 ? freight : 0);
+                var rateFrac = rate / 100;
+                var discBase = sub - disc;
+                var taxable = applyOn === "Grand Total" ? sub : discBase;
+                var mainBase = taxable + (freight > 0 ? freight : 0);
                 var mainTax = mainBase * rate / 100;
-                var raw = sub - disc + freight + mainTax;
+                var raw = discBase + freight + mainTax;
 
                 var cgst = 0, sgst = 0, igst = 0;
                 if (rate > 0) {
@@ -726,7 +727,12 @@
                 $("#t-cgst-row").style.display = gstType === "intra" ? "flex" : "none";
                 $("#t-sgst-row").style.display = gstType === "intra" ? "flex" : "none";
                 $("#t-igst-row").style.display = gstType === "inter" ? "flex" : "none";
-                $("#t-disc-warn").style.display = disc > sub ? "block" : "none";
+                // Grand Total rejects discount reaching the distribution base
+                // sub * (1 + rate); Net Total allows 100% free invoices.
+                var discOver = (applyOn === "Grand Total")
+                    ? (sub > 0 && disc >= sub * (1 + rateFrac))
+                    : disc > sub;
+                $("#t-disc-warn").style.display = discOver ? "block" : "none";
             }
 
             /* ---------- validation + save ---------- */

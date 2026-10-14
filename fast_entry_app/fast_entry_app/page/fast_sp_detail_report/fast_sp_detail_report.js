@@ -232,7 +232,7 @@ fast_entry_app.SPDetailReport = class SPDetailReport {
             fast_entry_app.report_ui.render_bar("#chart-sp-pcs", c.sp_pcs.labels, c.sp_pcs.values);
         }
         if (c.item_amount && c.item_amount.labels.length) {
-            fast_entry_app.report_ui.render_bar("#chart-item-amount", c.item_amount.labels, c.item_amount.values, { currency: true });
+            fast_entry_app.report_ui.render_bar("#chart-item-amount", c.item_amount.labels, c.item_amount.values, { currency: true, height: Math.min(640, Math.max(320, (c.item_amount.labels.length || 0) * 26)) });
         }
     }
 

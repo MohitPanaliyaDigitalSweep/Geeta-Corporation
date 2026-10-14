@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
+from fast_entry_app.api.address import set_default_addresses as _set_default_addresses
 from fast_entry_app.api.item import get_invoice_uom as _invoice_uom
 from fast_entry_app.api.item import get_item_uom as _pack_factors
 
@@ -134,6 +135,11 @@ def create_sales_invoice(data):
     if selling_price_list:
         si.selling_price_list = selling_price_list
 
+    # Populate customer / company / shipping address from the default Address
+    # records (Desk does this client-side; the API path had left them blank,
+    # which blocks e-Invoice, where customer_address is mandatory).
+    _set_default_addresses(si)
+
     if data.get("warehouse"):
         si.set_warehouse = data.get("warehouse")
 
@@ -225,9 +231,11 @@ def create_sales_invoice(data):
     if discount > 0:
         si.additional_discount_percentage = 0
         si.discount_amount = discount
-        # Discount mode comes from the UI ("Net Total" default). Net Total:
-        # discount off the bill net, GST on the discounted net. Grand Total:
-        # GST on the full pre-discount net, discount off the grand total.
+        # Discount mode comes from the UI ("Net Total" default). Under "Net
+        # Total" the taxable value is reduced; under "Grand Total" ERPNext keeps
+        # the line items and GST rows at full value, reverse-distributes the
+        # discount into the item nets and deducts it overall from the grand
+        # total (stock ERPNext behaviour).
         # Explicit (never the site default) so the preview and the doc agree.
         apply_on = (data.get("apply_discount_on") or "Net Total").strip()
         if apply_on not in ("Net Total", "Grand Total"):
@@ -316,7 +324,7 @@ def create_sales_invoice(data):
 
     if auto_einvoice:
         try:
-            from india_compliance.exceptions import AlreadyGeneratedError
+            from india_compliance.exceptions import AlreadyGeneratedError, NotApplicableError
             from india_compliance.gst_india.utils.e_invoice import generate_e_invoice
 
             generate_e_invoice(si.name)
@@ -324,6 +332,10 @@ def create_sales_invoice(data):
             frappe.log_error(f"india_compliance not installed — cannot generate e-Invoice for {si.name}")
         except AlreadyGeneratedError:
             pass
+        except NotApplicableError:
+            # e-Invoice is not applicable (e.g. B2C invoice, below threshold,
+            # company/customer not registered). Expected, not a failure.
+            frappe.logger().info(f"Fast Entry: e-Invoice not applicable for {si.name}")
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
@@ -332,7 +344,7 @@ def create_sales_invoice(data):
 
     if auto_ewaybill:
         try:
-            from india_compliance.exceptions import AlreadyGeneratedError
+            from india_compliance.exceptions import AlreadyGeneratedError, NotApplicableError
             from india_compliance.gst_india.utils.e_waybill import generate_e_waybill
 
             generate_e_waybill(doctype="Sales Invoice", docname=si.name)
@@ -340,6 +352,9 @@ def create_sales_invoice(data):
             frappe.log_error(f"india_compliance not installed — cannot generate e-Waybill for {si.name}")
         except AlreadyGeneratedError:
             pass
+        except NotApplicableError:
+            # e-Waybill is not applicable (e.g. below threshold / not required).
+            frappe.logger().info(f"Fast Entry: e-Waybill not applicable for {si.name}")
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(),
@@ -635,6 +650,7 @@ def _invoice_dedup_key(data):
         "warehouse": (data.get("warehouse") or "").strip(),
         "update_stock": 1 if data.get("update_stock") else 0,
         "discount": flt(data.get("discount")),
+        "apply_discount_on": (data.get("apply_discount_on") or "Net Total").strip(),
         "freight": flt(data.get("freight")),
         "distance": flt(data.get("distance")),
         "delivery_person": (data.get("delivery_person") or "").strip(),

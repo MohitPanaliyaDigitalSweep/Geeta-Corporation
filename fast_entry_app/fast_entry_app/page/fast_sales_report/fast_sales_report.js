@@ -279,15 +279,21 @@ fast_entry_app.FastSalesReport = class FastSalesReport {
         this._render_trend_chart();
     }
 
+    _chart(sel, opts) {
+        const el = fast_entry_app.report_ui._resolve_el(sel);
+        if (!el) return null;
+        return new frappe.Chart(el, opts);
+    }
+
     _render_sp_amount_chart() {
         const c = this.charts.sp_amount;
         if (!c || !c.labels.length) return;
-        new frappe.Chart("#chart-sp-amount", {
+        this._chart("#chart-sp-amount", {
             data: {
                 labels: c.labels,
                 datasets: [{ values: c.values }],
-                chartTypes: ["donut"],
             },
+            type: "donut",
             colors: ["#4C6EF5", "#12B886", "#F59F00", "#E03131", "#7950F2", "#20C997", "#FD7E14", "#339AF0"],
             height: 200,
             is_navigable: true,
@@ -299,7 +305,7 @@ fast_entry_app.FastSalesReport = class FastSalesReport {
     _render_pincode_chart() {
         const c = this.charts.pincode;
         if (!c || !c.labels.length) return;
-        new frappe.Chart("#chart-pincode", {
+        this._chart("#chart-pincode", {
             data: {
                 labels: c.labels,
                 datasets: [{ name: "Amount", values: c.amounts, chartType: "bar" }],
@@ -315,7 +321,7 @@ fast_entry_app.FastSalesReport = class FastSalesReport {
     _render_period_chart() {
         const c = this.charts.period_comparison;
         if (!c || !c.labels.length) return;
-        new frappe.Chart("#chart-period", {
+        this._chart("#chart-period", {
             data: {
                 labels: c.labels,
                 datasets: [
@@ -334,7 +340,7 @@ fast_entry_app.FastSalesReport = class FastSalesReport {
     _render_items_chart() {
         const c = this.charts.items;
         if (!c || !c.labels.length) return;
-        new frappe.Chart("#chart-items", {
+        this._chart("#chart-items", {
             data: {
                 labels: c.labels,
                 datasets: [{ name: "Amount", values: c.amounts, chartType: "bar" }],
@@ -350,12 +356,12 @@ fast_entry_app.FastSalesReport = class FastSalesReport {
     _render_sp_pcs_chart() {
         const c = this.charts.sp_pcs;
         if (!c || !c.labels.length) return;
-        new frappe.Chart("#chart-sp-pcs", {
+        this._chart("#chart-sp-pcs", {
             data: {
                 labels: c.labels,
                 datasets: [{ values: c.values }],
-                chartTypes: ["donut"],
             },
+            type: "donut",
             colors: ["#F59F00", "#E03131", "#4C6EF5", "#12B886", "#7950F2"],
             height: 200,
             is_navigable: true,
@@ -366,7 +372,7 @@ fast_entry_app.FastSalesReport = class FastSalesReport {
     _render_trend_chart() {
         const c = this.charts.trend;
         if (!c || !c.labels.length) return;
-        new frappe.Chart("#chart-trend", {
+        this._chart("#chart-trend", {
             data: {
                 labels: c.labels,
                 datasets: [{ name: "Sales", values: c.values, chartType: "line" }],

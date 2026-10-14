@@ -71,6 +71,14 @@ fast_entry_app.LedgerPNL = class LedgerPNL {
             <div class="flp-panel" id="flp-pnl-panel" style="display:none;">
                 <div class="fe-card">
                     <div class="fe-card-header"><i class="fa fa-line-chart"></i> Profit &amp; Loss <span class="fsr-summary-sub" id="flp-pnl-sub"></span></div>
+                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                        <div class="flp-tabs" id="flp-period-tabs" style="border-top:none;margin-top:0;padding-top:0;">
+                            <button class="flp-tab" data-period="month"><i class="fa fa-calendar"></i> Month</button>
+                            <button class="flp-tab flp-tab-active" data-period="year"><i class="fa fa-calendar-o"></i> Year</button>
+                            <button class="flp-tab" data-period="week"><i class="fa fa-calendar-check-o"></i> Week</button>
+                        </div>
+                        <span style="font-size:11px;color:#9ca3af;">Full Chart of Accounts — groups and zero balances included.</span>
+                    </div>
                     <div id="flp-pnl-wrap" style="overflow-x:auto;">
                         <table class="fsr-table" id="flp-pnl-table">
                             <thead id="flp-pnl-thead"></thead>
@@ -85,6 +93,7 @@ fast_entry_app.LedgerPNL = class LedgerPNL {
 
     bind_elements() {
         const self = this;
+        this.pnl_period = localStorage.getItem("flp_pnl_period") || "year";
         this.$company = this.$root.find("#flp-company");
         this.$from = this.$root.find("#flp-from");
         this.$to = this.$root.find("#flp-to");
@@ -105,9 +114,16 @@ fast_entry_app.LedgerPNL = class LedgerPNL {
         });
         this.$root.find("#flp-load").on("click", () => { this.load_ledger(); this.load_pnl(); });
         this.$root.find("#flp-ledger-refresh").on("click", () => this.load_ledger());
-        this.$root.find(".flp-tab").on("click", function() {
+        this.$root.find("#flp-period-tabs .flp-tab").on("click", function() {
+            self.pnl_period = $(this).data("period") || "year";
+            localStorage.setItem("flp_pnl_period", self.pnl_period);
+            self.$root.find("#flp-period-tabs .flp-tab").removeClass("flp-tab-active");
+            $(this).addClass("flp-tab-active");
+            self.load_pnl();
+        });
+        this.$root.find(".flp-tab[data-tab]").on("click", function() {
             const tab = $(this).data("tab");
-            self.$root.find(".flp-tab").removeClass("flp-tab-active");
+            self.$root.find(".flp-tab[data-tab]").removeClass("flp-tab-active");
             $(this).addClass("flp-tab-active");
             self.$root.find(".flp-panel").hide();
             self.$root.find("#flp-" + tab + "-panel").show();
@@ -273,11 +289,13 @@ fast_entry_app.LedgerPNL = class LedgerPNL {
         const company = this.$company.val();
         if (!company) return;
         const self = this;
+        this.$root.find("#flp-period-tabs .flp-tab").removeClass("flp-tab-active");
+        this.$root.find(`#flp-period-tabs .flp-tab[data-period="${this.pnl_period}"]`).addClass("flp-tab-active");
         this.$pnl_body.html(`<tr><td colspan="20" style="text-align:center;padding:20px;color:#9ca3af;"><i class="fa fa-spinner fa-spin"></i> Loading P&amp;L...</td></tr>`);
         this.$pnl_empty.hide();
         frappe.call({
             method: "fast_entry_app.api.ledger_pnl.get_pnl",
-            args: { company: company, from_date: this.$from.val() || "", to_date: this.$to.val() || "" },
+            args: { company: company, from_date: this.$from.val() || "", to_date: this.$to.val() || "", period: this.pnl_period || "year" },
             callback: function(r) { self.render_pnl(r.message || {}); },
             error: function() { self.$pnl_body.html(`<tr><td colspan="20" style="text-align:center;padding:20px;color:#ef4444;">Failed to load P&amp;L.</td></tr>`); }
         });
@@ -305,6 +323,7 @@ fast_entry_app.LedgerPNL = class LedgerPNL {
             const amt = self.flt(r.total);
             const is_income = r.root_type === "Income";
             const tr = document.createElement("tr");
+            if (r.is_group) tr.className = "flp-group";
 
             if (r.root_type !== last_type) {
                 const hdr_tr = document.createElement("tr");

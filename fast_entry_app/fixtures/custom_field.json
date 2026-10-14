@@ -1934,5 +1934,19 @@
   "name": "Sales Invoice-fe_dedup_key",
   "read_only": 1,
   "reqd": 0
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Purchase Invoice",
+  "fieldname": "fe_dedup_key",
+  "fieldtype": "Data",
+  "hidden": 1,
+  "in_list_view": 0,
+  "insert_after": "bill_no",
+  "label": "Fast Entry Dedup Key",
+  "module": "Fast Entry App",
+  "name": "Purchase Invoice-fe_dedup_key",
+  "read_only": 1,
+  "reqd": 0
  }
 ]

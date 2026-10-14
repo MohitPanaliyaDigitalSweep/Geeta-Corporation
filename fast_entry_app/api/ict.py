@@ -26,6 +26,45 @@ def _default_purchase_template(company, gst_type):
         return ""
 
 
+def ensure_ict_accounts(company):
+    """Dedicated ICT Receivable / ICT Payable accounts for a company.
+
+    Every inter-company leg (SI debit, PI credit, both Payment Entries) posts
+    to these instead of the generic Debtors/Creditors, so ICT money is tracked
+    separately per company. Idempotent: creates what is missing, returns both
+    names. Never throws for existing accounts.
+    """
+    abbr = frappe.db.get_value("Company", company, "abbr") or company
+    out = {}
+    specs = [
+        ("receivable", f"ICT Receivable - {abbr}", "Receivable", "Asset", f"Accounts Receivable - {abbr}"),
+        ("payable", f"ICT Payable - {abbr}", "Payable", "Liability", f"Accounts Payable - {abbr}"),
+    ]
+    for key, name, account_type, root_type, parent in specs:
+        if frappe.db.exists("Account", name):
+            out[key] = name
+            continue
+        bare = name.rsplit(" - ", 1)[0]
+        same_name = frappe.db.get_value("Account", {"account_name": bare, "company": company}, "name")
+        if same_name:
+            out[key] = same_name
+            continue
+        if not frappe.db.exists("Account", parent):
+            frappe.throw(_("Cannot create {0}: parent account {1} does not exist for company {2}").format(
+                name, parent, company))
+        doc = frappe.new_doc("Account")
+        doc.account_name = bare
+        doc.company = company
+        doc.account_type = account_type
+        doc.root_type = root_type
+        doc.parent_account = parent
+        doc.is_group = 0
+        doc.flags.ignore_permissions = True
+        doc.insert(ignore_permissions=True)
+        out[key] = doc.name
+    return out
+
+
 @frappe.whitelist()
 def create_inter_company_transfer(data):
     """Create an Inter Company Transfer document (Draft)."""
@@ -374,13 +413,14 @@ def _make_ict_payment_entry(ict, company, party_type, party, payment_type, refer
     if not default_bank:
         frappe.throw(_("No default Bank Account set for company {0}").format(company))
 
+    # Inter-company legs settle through the dedicated ICT accounts, never the
+    # generic Debtors/Creditors, so ICT balances stay separately trackable.
+    ict_accounts = ensure_ict_accounts(company)
     if payment_type == "Pay":
-        default_payable = frappe.db.get_value("Company", company, "default_payable_account")
         pe.paid_from = default_bank
-        pe.paid_to = default_payable
+        pe.paid_to = ict_accounts["payable"]
     else:
-        default_receivable = frappe.db.get_value("Company", company, "default_receivable_account")
-        pe.paid_from = default_receivable
+        pe.paid_from = ict_accounts["receivable"]
         pe.paid_to = default_bank
 
     pe.append("references", {
@@ -441,6 +481,54 @@ def validate_ict(data):
             errors.append(f"Row {item.get('idx', '?')}: Target Warehouse belongs to {tgt_wh_company}, not {data['to_company']}")
 
     return errors
+
+
+@frappe.whitelist()
+def get_ict_tax_templates(source_company=None, target_company=None):
+    """Intra-state (CGST+SGST) template options for the ICT screen.
+
+    All group companies are same-state, so only In-state, non-RCM templates
+    are offered, labelled with their company; the related company's template
+    comes back as the default for each leg. Kept separate from
+    get_tax_templates_with_details (which lists everything) so the ICT page
+    can never pick an Out-state/RCM template by accident.
+    """
+    def options(doctype):
+        rows = frappe.get_all(
+            doctype,
+            filters=[
+                ["title", "like", "%In-state%"],
+                ["title", "not like", "%RCM%"],
+                ["title", "not like", "%Refund%"],
+            ],
+            fields=["name", "company", "title"],
+            order_by="company asc, title asc",
+        )
+        out = []
+        for r in rows:
+            child = "Sales Taxes and Charges" if doctype.startswith("Sales") else "Purchase Taxes and Charges"
+            taxes = frappe.get_all(
+                child,
+                filters={"parent": r.name},
+                fields=["charge_type", "account_head", "rate", "description"],
+            )
+            out.append({
+                "name": r.name,
+                "company": r.company,
+                "title": r.title,
+                "label": "%s · %s" % (r.title, r.company),
+                "taxes": taxes,
+            })
+        return out
+
+    sales = options("Sales Taxes and Charges Template")
+    purchase = options("Purchase Taxes and Charges Template")
+    return {
+        "sales": sales,
+        "purchase": purchase,
+        "default_sales": _default_sales_template(source_company, "intra") if source_company else "",
+        "default_purchase": _default_purchase_template(target_company, "intra") if target_company else "",
+    }
 
 
 @frappe.whitelist()

@@ -59,8 +59,8 @@ fast_entry_app.ICTEntry = class ICTEntry {
                     <div class="fe-field"><label>Posting Date <span class="reqd">*</span></label><input type="date" class="fe-input" id="fe-posting-date" /></div>
                     <div class="fe-field"><label>GST Type</label>
                         <select class="fe-input" id="fe-gst-type">
-                            <option value="inter">Inter-State (IGST)</option>
                             <option value="intra">Intra-State (CGST+SGST)</option>
+                            <option value="inter">Inter-State (IGST)</option>
                         </select>
                     </div>
                 </div>
@@ -170,8 +170,8 @@ fast_entry_app.ICTEntry = class ICTEntry {
         this.$root.find("#fe-add-row").on("click", () => this.add_empty_row());
         this.$root.find("#fe-save").on("click", () => this.save());
         this.$root.find("#fe-save-new").on("click", () => this.save_and_new());
-        this.$source_company.on("change", () => { localStorage.setItem("fe_ict_source_company", this.$source_company.val()); this.update_tax_preview(); });
-        this.$target_company.on("change", () => { localStorage.setItem("fe_ict_target_company", this.$target_company.val()); this.update_tax_preview(); });
+        this.$source_company.on("change", () => { localStorage.setItem("fe_ict_source_company", this.$source_company.val()); this.load_tax_templates(); this.update_tax_preview(); });
+        this.$target_company.on("change", () => { localStorage.setItem("fe_ict_target_company", this.$target_company.val()); this.load_tax_templates(); this.update_tax_preview(); });
         this.$sales_tax_template.on("change", () => this.update_tax_preview());
         this.$purchase_tax_template.on("change", () => this.update_tax_preview());
     }
@@ -187,32 +187,65 @@ fast_entry_app.ICTEntry = class ICTEntry {
                 var ls = localStorage.getItem("fe_ict_source_company"), lt = localStorage.getItem("fe_ict_target_company");
                 if (ls && companies.find(c => c.name === ls)) self.$source_company.val(ls);
                 if (lt && companies.find(c => c.name === lt)) self.$target_company.val(lt);
+                // Companies arrive after the initial template load (async), and
+                // a programmatic .val() fires no change event — so reload the
+                // templates now that the companies are known. The token guard
+                // inside drops whichever response arrives stale.
+                self.load_tax_templates();
             }
         });
     }
 
     load_tax_templates() {
         const self = this;
-        frappe.call({ method: "fast_entry_app.api.ict.get_tax_templates_with_details", args: {},
+        const token = (this._tpl_token = (this._tpl_token || 0) + 1);
+        frappe.call({
+            method: "fast_entry_app.api.ict.get_ict_tax_templates",
+            args: {
+                source_company: this.$source_company.val() || "",
+                target_company: this.$target_company.val() || "",
+            },
             callback: function(r) {
+                if (token !== self._tpl_token) return;
                 const data = r.message || { sales: [], purchase: [] };
                 self.tax_templates = data;
-
-                self.$sales_tax_template.empty().append('<option value="">Auto (Company Default)</option>');
-                data.sales.forEach(t => {
-                    const rates = t.taxes.map(tx => tx.rate + "%").join("+");
-                    const label = rates ? `${t.name} (${rates})` : t.name;
-                    self.$sales_tax_template.append(`<option value="${t.name}">${label}</option>`);
-                });
-
-                self.$purchase_tax_template.empty().append('<option value="">Auto (Company Default)</option>');
-                data.purchase.forEach(t => {
-                    const rates = t.taxes.map(tx => tx.rate + "%").join("+");
-                    const label = rates ? `${t.name} (${rates})` : t.name;
-                    self.$purchase_tax_template.append(`<option value="${t.name}">${label}</option>`);
-                });
+                self.render_tax_options();
             }
         });
+    }
+
+    render_tax_options() {
+        const self = this;
+        const data = this.tax_templates || { sales: [], purchase: [] };
+        const src = this.$source_company.val() || "";
+        const tgt = this.$target_company.val() || "";
+
+        self.$sales_tax_template.empty().append('<option value="">Auto (Company Default)</option>');
+        (data.sales || []).forEach(t => {
+            const rates = (t.taxes || []).map(tx => tx.rate + "%").join("+");
+            const label = rates ? `${t.title} (${rates}) · ${t.company}` : `${t.title} · ${t.company}`;
+            self.$sales_tax_template.append(`<option value="${t.name}" data-company="${t.company || ""}">${label}</option>`);
+        });
+        self.$purchase_tax_template.empty().append('<option value="">Auto (Company Default)</option>');
+        (data.purchase || []).forEach(t => {
+            const rates = (t.taxes || []).map(tx => tx.rate + "%").join("+");
+            const label = rates ? `${t.title} (${rates}) · ${t.company}` : `${t.title} · ${t.company}`;
+            self.$purchase_tax_template.append(`<option value="${t.name}" data-company="${t.company || ""}">${label}</option>`);
+        });
+
+        // Pre-select the related company's In-state template, without
+        // clobbering an explicit manual pick for the same company.
+        self.autoselect_template(self.$sales_tax_template, data.default_sales, src);
+        self.autoselect_template(self.$purchase_tax_template, data.default_purchase, tgt);
+        this.update_tax_preview();
+    }
+
+    autoselect_template($sel, def_name, company) {
+        if (!def_name) return;
+        const cur = $sel.val() || "";
+        if (!cur) { $sel.val(def_name); return; }
+        const cur_company = $sel.find("option:selected").data("company") || "";
+        if (cur_company && company && cur_company !== company) $sel.val(def_name);
     }
 
     add_empty_row() {
@@ -227,8 +260,8 @@ fast_entry_app.ICTEntry = class ICTEntry {
         tr.dataset.idx = row.idx; tr.className = "fe-grid-row";
         tr.innerHTML = `<td class="fe-col-num">${row.idx}</td>
             <td class="fe-col-item"><div class="fe-input-wrap fe-autocomplete-wrap"><input type="text" class="fe-grid-input fe-item-input" data-field="item_code" value="${row.item_name||row.item_code}" placeholder="Search item..." autocomplete="off" /></div><div class="fe-item-code">${row.item_code||""}</div><div class="fe-item-stock" style="display:none;"></div></td>
-            <td class="fe-col-src-wh"><div class="fe-input-wrap fe-autocomplete-wrap"><input type="text" class="fe-grid-input fe-wh-input" data-field="source_warehouse" value="${row.source_warehouse}" placeholder="Source WH" autocomplete="off" /></div></td>
-            <td class="fe-col-tgt-wh"><div class="fe-input-wrap fe-autocomplete-wrap"><input type="text" class="fe-grid-input fe-wh-input" data-field="target_warehouse" value="${row.target_warehouse}" placeholder="Target WH" autocomplete="off" /></div></td>
+            <td class="fe-col-src-wh"><div class="fe-input-wrap fe-autocomplete-wrap"><input type="text" class="fe-grid-input fe-wh-input" data-field="source_warehouse" value="${row.source_warehouse}" placeholder="Source WH" autocomplete="off" /></div><div class="fe-wh-stock" data-stock-for="source_warehouse" style="display:none;"></div></td>
+            <td class="fe-col-tgt-wh"><div class="fe-input-wrap fe-autocomplete-wrap"><input type="text" class="fe-grid-input fe-wh-input" data-field="target_warehouse" value="${row.target_warehouse}" placeholder="Target WH" autocomplete="off" /></div><div class="fe-wh-stock" data-stock-for="target_warehouse" style="display:none;"></div></td>
             <td class="fe-col-box"><input type="number" class="fe-grid-input fe-num-input" data-field="box" value="${row.box||""}" min="0" step="1" /></td>
             <td class="fe-col-pcs"><input type="number" class="fe-grid-input fe-num-input" data-field="pcs" value="${row.pcs||""}" min="0" /></td>
             <td class="fe-col-ltr"><input type="number" class="fe-grid-input fe-num-input" data-field="ltr" value="${row.ltr||""}" min="0" step="0.01" /></td>
@@ -341,30 +374,45 @@ fast_entry_app.ICTEntry = class ICTEntry {
         const tgt_company = this.$target_company.val();
         if (!row.item_code) return;
 
-        const $stock = $(tr).find(".fe-item-stock");
-        if (!src_company && !tgt_company) { $stock.hide(); return; }
+        const $row = $(tr);
+        const $stock = $row.find(".fe-item-stock");
+        const $src_stock = $row.find('.fe-wh-stock[data-stock-for="source_warehouse"]');
+        const $tgt_stock = $row.find('.fe-wh-stock[data-stock-for="target_warehouse"]');
+        if (!src_company && !tgt_company) {
+            $stock.hide(); $src_stock.hide(); $tgt_stock.hide();
+            return;
+        }
 
         let pending = 0;
         const results = {};
 
+        function short_wh(wh, fallback) {
+            return wh ? wh.split(" - ")[0] : fallback;
+        }
+
+        function stock_line(tag, wh, res) {
+            const qty = self.flt(res.actual_qty);
+            const color = qty > 0 ? '#059669' : qty < 0 ? '#dc2626' : '#9ca3af';
+            return '<span style="color:#6b7280;font-size:9px;">' + tag + ':</span> ' +
+                '<span style="color:' + color + ';font-weight:600;">' +
+                short_wh(wh, tag === "SRC" ? "Source" : "Target") + ': ' + self.fmt(qty) + '</span>';
+        }
+
         function render() {
             if (pending > 0) return;
-            let html = '';
+            // SRC line lives under the source warehouse, TGT under target.
             if (results.src) {
-                const src_wh = row.source_warehouse || "";
-                const src_name = src_wh ? src_wh.split(" - ")[0] : "Source";
-                const qty = results.src.actual_qty || 0;
-                const color = qty > 0 ? '#059669' : qty < 0 ? '#dc2626' : '#9ca3af';
-                html += '<span style="color:#6b7280;font-size:9px;">SRC:</span> <span style="color:'+color+';font-weight:600;">'+src_name+': '+self.fmt(qty)+'</span>';
-            }
+                $src_stock.html(stock_line("SRC", row.source_warehouse, results.src)).show();
+            } else { $src_stock.hide(); }
             if (results.tgt) {
-                const tgt_wh = row.target_warehouse || "";
-                const tgt_name = tgt_wh ? tgt_wh.split(" - ")[0] : "Target";
-                const qty = results.tgt.actual_qty || 0;
-                const color = qty > 0 ? '#3b82f6' : qty < 0 ? '#dc2626' : '#9ca3af';
-                html += '<span style="color:#6b7280;font-size:9px;margin-left:8px;">TGT:</span> <span style="color:'+color+';font-weight:600;">'+tgt_name+': '+self.fmt(qty)+'</span>';
-            }
-            if (html) { $stock.html(html).show(); } else { $stock.hide(); }
+                $tgt_stock.html(stock_line("TGT", row.target_warehouse, results.tgt)).show();
+            } else { $tgt_stock.hide(); }
+            // ALL-companies total lives under the item.
+            if (results.all) {
+                const total = self.flt(results.all.total_actual_qty);
+                $stock.html('<span style="color:#6b7280;font-size:9px;">ALL:</span> ' +
+                    '<span style="color:#7c3aed;font-weight:600;">' + self.fmt(total) + ' (all companies)</span>').show();
+            } else { $stock.hide(); }
         }
 
         if (src_company && row.source_warehouse) {
@@ -385,6 +433,13 @@ fast_entry_app.ICTEntry = class ICTEntry {
                 error: function() { pending--; render(); }
             });
         }
+        pending++;
+        frappe.call({
+            method: "fast_entry_app.api.item.get_item_stock_all",
+            args: { item_code: row.item_code },
+            callback: function(r) { results.all = r.message || {}; pending--; render(); },
+            error: function() { pending--; render(); }
+        });
 
         if (pending === 0) render();
     }
@@ -398,7 +453,7 @@ fast_entry_app.ICTEntry = class ICTEntry {
             const company = field === "source_warehouse" ? self.$source_company.val() : self.$target_company.val();
             frappe.call({ method: "fast_entry_app.api.warehouse.search_warehouses", args: { search: val, company: company || "", limit: 15 },
                 callback: function(r) { let html = ""; (r.message || []).forEach(function(w) { html += `<div class="fe-dropdown-item" data-value="${w.name}"><span class="fe-dd-primary">${w.warehouse_name||w.name}</span><span class="fe-dd-secondary">${w.name}</span></div>`; });
-                    if (html) { self.show_global_dropdown($input, html, function($el) { $input.val($el.data("value")); row[field] = $el.data("value"); }); } else { self.hide_global_dropdown(); } }
+                    if (html) { self.show_global_dropdown($input, html, function($el) { $input.val($el.data("value")); row[field] = $el.data("value"); self.show_item_stock(row, $input.closest("tr")); }); } else { self.hide_global_dropdown(); } }
             });
         });
         $input.on("keydown", function(e) {
@@ -521,16 +576,18 @@ fast_entry_app.ICTEntry = class ICTEntry {
 
     render_tax_preview_body(sales_result, purchase_result, items) {
         const net_total = items.reduce((s, r) => s + this.flt(r.amount), 0);
-        let total_tax = 0;
+        // Tax is paid ONCE, on the sales (source) leg. The purchase leg rows
+        // are the target company's input credit (ITC) — shown for reference,
+        // never added to the payable total.
+        const sales_tax = sales_result ? (sales_result.total_tax || 0) : 0;
+
         let html = '';
 
         if (sales_result) {
-            html += this.build_tax_table("Sales (Source)", sales_result);
-            total_tax += sales_result.total_tax || 0;
+            html += this.build_tax_table("Sales (Source) — tax payable", sales_result);
         }
         if (purchase_result) {
-            html += this.build_tax_table("Purchase (Target)", purchase_result);
-            total_tax += purchase_result.total_tax || 0;
+            html += this.build_tax_table("Purchase (Target) — input credit (ITC)", purchase_result);
         }
 
         if (!html) {
@@ -539,8 +596,8 @@ fast_entry_app.ICTEntry = class ICTEntry {
 
         this.$tax_preview_body.html(html);
         this.$root.find("#fe-net-total-display").text(net_total.toFixed(2));
-        this.$root.find("#fe-tax-total-display").text(total_tax.toFixed(2));
-        this.$root.find("#fe-grand-total").text((net_total + total_tax).toFixed(2));
+        this.$root.find("#fe-tax-total-display").text(sales_tax.toFixed(2));
+        this.$root.find("#fe-grand-total").text((net_total + sales_tax).toFixed(2));
 
         const parts = [];
         const leg = (label, res) => {
@@ -716,7 +773,7 @@ fast_entry_app.ICTEntry = class ICTEntry {
 
         if (details.sales_invoice) {
             h += `<div class="fe-payment-card fe-payment-sell">`;
-            h += `<div class="fe-payment-label">SELLING (Source Company)</div>`;
+            h += `<div class="fe-payment-label">SELLING · ${details.company || "Source"} RECEIVES from ${details.to_company || "Target"}</div>`;
             h += `<div class="fe-payment-doc"><a href="/app/sales-invoice/${details.sales_invoice}" target="_blank">${details.sales_invoice}</a></div>`;
             h += `<div class="fe-payment-meta">Rs. ${this.fmt(details.si_grand_total)} | Outstanding: Rs. ${this.fmt(si_outstanding)}</div>`;
             if (si_outstanding <= 0) h += `<div class="fe-payment-paid"><i class="fa fa-check-circle"></i> Fully Paid</div>`;
@@ -725,7 +782,7 @@ fast_entry_app.ICTEntry = class ICTEntry {
 
         if (details.purchase_invoice) {
             h += `<div class="fe-payment-card fe-payment-buy">`;
-            h += `<div class="fe-payment-label">BUYING (Target Company)</div>`;
+            h += `<div class="fe-payment-label">BUYING · ${details.to_company || "Target"} PAYS to ${details.company || "Source"}</div>`;
             h += `<div class="fe-payment-doc"><a href="/app/purchase-invoice/${details.purchase_invoice}" target="_blank">${details.purchase_invoice}</a></div>`;
             h += `<div class="fe-payment-meta">Rs. ${this.fmt(details.pi_grand_total)} | Outstanding: Rs. ${this.fmt(pi_outstanding)}</div>`;
             if (pi_outstanding <= 0) h += `<div class="fe-payment-paid"><i class="fa fa-check-circle"></i> Fully Paid</div>`;

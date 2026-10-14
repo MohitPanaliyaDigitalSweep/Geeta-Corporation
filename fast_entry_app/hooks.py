@@ -27,7 +27,7 @@ add_to_apps_screen = [
 # public files (only *.bundle.* get hashed names), so without this suffix users
 # keep running stale JS/CSS for half a day. Bump the suffix on every release
 # that touches public/css or public/js.
-_FE_ASSET_V = "20261007d"
+_FE_ASSET_V = "20261014a"
 app_include_css = [
     f"/assets/fast_entry_app/css/fast_entry_app.css?v={_FE_ASSET_V}",
     f"/assets/fast_entry_app/css/fast_purchase_entry.css?v={_FE_ASSET_V}",
@@ -64,6 +64,22 @@ override_whitelisted_methods = {
 
 
 
+# Doctype controller subclasses. Converge ERPNext's "Grand Total" discount mode
+# onto its "Net Total" bookkeeping: stock distributes a Grand Total discount over
+# a tax-inclusive base (grand_total - actual taxes), which distorts net_total and
+# collapses every total to zero when the discount reaches that base. The override
+# engine (fast_entry_app.overrides.taxes_and_totals) runs the whole calculation
+# as "Net Total" when a Grand Total discount is present, then restores the doc
+# field, plus it rejects discount >= net_total so net/grand are never zero.
+# frappe resolves the LAST entry per doctype; india_compliance only overrides
+# "Customize Form", so there is no conflict.
+override_doctype_class = {
+    "Sales Invoice": "fast_entry_app.overrides.controllers.SalesInvoice",
+    "Purchase Invoice": "fast_entry_app.overrides.controllers.PurchaseInvoice",
+    "Quotation": "fast_entry_app.overrides.controllers.Quotation",
+}
+
+
 # Fixtures
 fixtures = [
     {
@@ -81,14 +97,16 @@ fixtures = [
                 "name",
                 "in",
                 [
-                    "Print Invoice 1",
                     "Custom Sales Invoice",
                     "Custom Purchase Invoice",
                     "Custom Quotation",
-                    "Test Print Format",
                 ],
             ]
         ],
+    },
+    {
+        "dt": "List View Settings",
+        "filters": [["name", "=", "Inter Company Transfer"]],
     },
 ]
 

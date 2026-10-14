@@ -45,20 +45,13 @@ fast_entry_app.PartyGroupReport = class PartyGroupReport {
             </div>
             <div id="pgr-period-info" style="font-size:12px;color:#666;margin-bottom:10px;"></div>
             <div id="pgr-kpi-area" class="frms-anim" style="animation-delay:0.08s;"></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
                 <div class="frms-chart-card frms-anim" style="margin-bottom:0;animation-delay:0.12s;">
                     <div class="frms-chart-head">
                         <div class="frms-chart-icon" style="background:#dbeafe;color:#3b82f6;"><i class="fa fa-users"></i></div>
                         <div><div class="frms-chart-title">Sales by Party Group</div></div>
                     </div>
                     <div id="chart-pg-amount"></div>
-                </div>
-                <div class="frms-chart-card frms-anim" style="margin-bottom:0;animation-delay:0.14s;">
-                    <div class="frms-chart-head">
-                        <div class="frms-chart-icon" style="background:#ede9fe;color:#7c3aed;"><i class="fa fa-cube"></i></div>
-                        <div><div class="frms-chart-title">Top Products</div></div>
-                    </div>
-                    <div id="chart-item-amount"></div>
                 </div>
                 <div class="frms-chart-card frms-anim" style="margin-bottom:0;animation-delay:0.16s;">
                     <div class="frms-chart-head">
@@ -67,6 +60,13 @@ fast_entry_app.PartyGroupReport = class PartyGroupReport {
                     </div>
                     <div id="chart-pg-customers"></div>
                 </div>
+            </div>
+            <div class="frms-chart-card frms-anim" style="animation-delay:0.18s;">
+                <div class="frms-chart-head">
+                    <div class="frms-chart-icon" style="background:#ede9fe;color:#7c3aed;"><i class="fa fa-cube"></i></div>
+                    <div><div class="frms-chart-title">Top Products</div></div>
+                </div>
+                <div id="chart-item-amount"></div>
             </div>
             <div id="pgr-group-area" class="frms-anim" style="animation-delay:0.16s;"></div>
             <div id="pgr-product-area" class="frms-anim" style="animation-delay:0.20s;"></div>
@@ -221,7 +221,7 @@ fast_entry_app.PartyGroupReport = class PartyGroupReport {
             fast_entry_app.report_ui.render_bar("#chart-pg-amount", c.group_amount.labels, c.group_amount.values, { currency: true });
         }
         if (c.item_amount && c.item_amount.labels.length) {
-            fast_entry_app.report_ui.render_bar("#chart-item-amount", c.item_amount.labels, c.item_amount.values, { currency: true });
+            fast_entry_app.report_ui.render_bar("#chart-item-amount", c.item_amount.labels, c.item_amount.values, { currency: true, height: Math.min(640, Math.max(320, (c.item_amount.labels.length || 0) * 26)) });
         }
         if (c.group_customers && c.group_customers.labels.length) {
             fast_entry_app.report_ui.render_bar("#chart-pg-customers", c.group_customers.labels, c.group_customers.values);

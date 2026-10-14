@@ -1,0 +1,8 @@
+[
+ {
+  "doctype": "List View Settings",
+  "name": "Inter Company Transfer",
+  "fields": "[{\"label\": \"ID\", \"fieldname\": \"name\"}, {\"type\": \"Status\", \"label\": \"Status\", \"fieldname\": \"status_field\"}, {\"label\": \"From Company\", \"fieldname\": \"company\"}, {\"label\": \"To Company\", \"fieldname\": \"to_company\"}, {\"label\": \"Posting Date\", \"fieldname\": \"posting_date\"}, {\"label\": \"Total Box\", \"fieldname\": \"total_box\"}, {\"label\": \"Total PCS\", \"fieldname\": \"total_pcs\"}, {\"label\": \"Total LTR\", \"fieldname\": \"total_ltr\"}, {\"label\": \"Total\", \"fieldname\": \"total\"}, {\"label\": \"Grand Total\", \"fieldname\": \"grand_total\"}, {\"label\": \"Transaction Type\", \"fieldname\": \"transaction_type\"}]",
+  "docstatus": 0
+ }
+]

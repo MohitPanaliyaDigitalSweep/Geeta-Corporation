@@ -209,6 +209,18 @@ input.fe-num-input[type=number] {
     flex-wrap: wrap;
 }
 
+/* Availability beneath each warehouse input */
+.fe-wh-stock {
+    font-size: 9px;
+    color: #6b7280;
+    margin-top: 1px;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
 .fe-amount-display {
     font-weight: 600;
     color: #1a1a2e;

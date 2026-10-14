@@ -81,36 +81,41 @@ def _get_si(invoice_name):
 	return si
 
 
+def _resolve_print_format(doctype, configured, fallback):
+    """Print format that actually exists: configured value first, then the
+    maintained fallback, else None (= the doctype's own default format).
+    Guarantees WhatsApp PDFs always resolve to the default format rather
+    than a stale/renamed setting."""
+    for candidate in (configured, fallback):
+        if candidate and frappe.db.exists("Print Format", candidate):
+            return candidate
+    return None
+
+
 def _invoice_pdf(si, print_format=None):
-	pf = print_format or si.get("print_format") or DEFAULT_PRINT_FORMAT
-	if pf and not frappe.db.exists("Print Format", pf):
-		pf = None
-	try:
-		return frappe.get_print(si.doctype, si.name, print_format=pf, as_pdf=True, pdf_generator="chrome")
-	except Exception:
-		return frappe.get_print(si.doctype, si.name, as_pdf=True, pdf_generator="chrome")
+    pf = _resolve_print_format(si.doctype, print_format or si.get("print_format"), DEFAULT_PRINT_FORMAT)
+    try:
+        return frappe.get_print(si.doctype, si.name, print_format=pf, as_pdf=True, pdf_generator="chrome")
+    except Exception:
+        return frappe.get_print(si.doctype, si.name, as_pdf=True, pdf_generator="chrome")
 
 
 def _get_quotation_pdf(quotation_name):
-	quo = frappe.get_doc("Quotation", quotation_name)
-	pf = DEFAULT_QUOTATION_PRINT_FORMAT
-	if pf and not frappe.db.exists("Print Format", pf):
-		pf = None
-	try:
-		return frappe.get_print(quo.doctype, quo.name, print_format=pf, as_pdf=True, pdf_generator="chrome")
-	except Exception:
-		return frappe.get_print(quo.doctype, quo.name, as_pdf=True, pdf_generator="chrome")
+    quo = frappe.get_doc("Quotation", quotation_name)
+    pf = _resolve_print_format(quo.doctype, None, DEFAULT_QUOTATION_PRINT_FORMAT)
+    try:
+        return frappe.get_print(quo.doctype, quo.name, print_format=pf, as_pdf=True, pdf_generator="chrome")
+    except Exception:
+        return frappe.get_print(quo.doctype, quo.name, as_pdf=True, pdf_generator="chrome")
 
 
 def _get_pi_pdf(purchase_invoice_name):
-	pi = frappe.get_doc("Purchase Invoice", purchase_invoice_name)
-	pf = DEFAULT_PI_PRINT_FORMAT
-	if pf and not frappe.db.exists("Print Format", pf):
-		pf = None
-	try:
-		return frappe.get_print(pi.doctype, pi.name, print_format=pf, as_pdf=True, pdf_generator="chrome")
-	except Exception:
-		return frappe.get_print(pi.doctype, pi.name, as_pdf=True, pdf_generator="chrome")
+    pi = frappe.get_doc("Purchase Invoice", purchase_invoice_name)
+    pf = _resolve_print_format(pi.doctype, None, DEFAULT_PI_PRINT_FORMAT)
+    try:
+        return frappe.get_print(pi.doctype, pi.name, print_format=pf, as_pdf=True, pdf_generator="chrome")
+    except Exception:
+        return frappe.get_print(pi.doctype, pi.name, as_pdf=True, pdf_generator="chrome")
 
 
 def _save_pdf_to_files(pdf_bytes, filename):
@@ -185,6 +190,22 @@ def _wa_number_candidates(doc):
 		contact_values = frappe.db.get_value("Contact", contact, ["mobile_no", "phone"], as_dict=True) or {}
 		add(contact_values.get("mobile_no"), _("Contact"), "mobile_no", "Contact")
 		add(contact_values.get("phone"), _("Contact (landline)"), "phone", "Contact")
+
+		# The Contact's phone numbers also live in the phone_nos child table.
+		phone_rows = frappe.get_all(
+			"Contact Phone",
+			filters={"parent": contact, "parenttype": "Contact"},
+			fields=["phone", "is_primary_mobile_no", "is_primary_phone"],
+			order_by="idx asc",
+		)
+		for row in phone_rows:
+			if row.get("is_primary_mobile_no"):
+				source = _("Contact phone (primary mobile)")
+			elif row.get("is_primary_phone"):
+				source = _("Contact phone (primary)")
+			else:
+				source = _("Contact phone")
+			add(row.get("phone"), source, "phone_nos", "Contact")
 
 	party_type, party_name = _doc_party(doc)
 	if party_type and party_name:

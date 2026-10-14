@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import flt
 
 from erpnext.controllers.stock_controller import StockController
+from fast_entry_app.api.ict import ensure_ict_accounts
 
 INTER_COMPANY_PRICE_LIST = "Inter Company"
 
@@ -48,13 +49,45 @@ class InterCompanyTransfer(StockController):
     def calculate_totals(self):
         self.total_qty = 0
         self.total = 0
+        total_box = 0
+        total_pcs = 0
+        total_ltr = 0
 
         for item in self.items:
             self.total_qty += item.qty
             self.total += item.amount
+            total_box += flt(item.get("fe_box", 0))
+            total_pcs += flt(item.get("fe_pcs", 0))
+            total_ltr += flt(item.get("fe_total_ltr", 0))
 
-        self.base_grand_total = self.total
-        self.grand_total = self.total
+        self.total_box = total_box
+        self.total_pcs = total_pcs
+        self.total_ltr = total_ltr
+
+        # Tax-inclusive grand total from the SALES leg template (the tax being
+        # paid on this transfer). Mirrors the page preview: GST on items,
+        # purchase-side ITC is not added again.
+        total_tax = self._sales_leg_tax(self.total)
+        self.total_tax = total_tax
+
+        self.base_grand_total = self.total + total_tax
+        self.grand_total = self.total + total_tax
+
+    def _sales_leg_tax(self, net_total):
+        """GST on the transfer's net total using the doc's sales tax template."""
+        if not net_total or not self.sales_tax_template:
+            return 0
+        total_tax = 0
+        try:
+            tmpl = frappe.get_cached_doc("Sales Taxes and Charges Template", self.sales_tax_template)
+            for row in tmpl.taxes or []:
+                if row.charge_type == "On Net Total" and flt(row.rate):
+                    total_tax += net_total * flt(row.rate) / 100
+                elif row.charge_type == "Actual":
+                    total_tax += flt(row.tax_amount)
+        except Exception:
+            pass
+        return total_tax
 
     def before_submit(self):
         self.validate_values()
@@ -80,6 +113,10 @@ class InterCompanyTransfer(StockController):
             if missing:
                 frappe.throw(_("{0} is missing: {1}").format(
                     company, ", ".join(missing)))
+        # Dedicated ICT Receivable/Payable per company (auto-created when
+        # missing) so inter-company money never mixes with regular trade AR/AP.
+        ensure_ict_accounts(self.company)
+        ensure_ict_accounts(self.to_company)
 
     def validate_warehouses(self):
         """Ensure warehouses belong to the correct companies."""
@@ -411,6 +448,7 @@ class InterCompanyTransfer(StockController):
         si = make_sales_invoice(so_name)
         si.company = self.company
         si.customer = self.get_internal_customer(self.to_company)
+        si.debit_to = ensure_ict_accounts(self.company)["receivable"]
         si.due_date = self.posting_date
         si.currency = frappe.get_cached_value("Company", self.company, "default_currency") or "INR"
         si.ignore_pricing_rule = 1
@@ -445,6 +483,7 @@ class InterCompanyTransfer(StockController):
         pi = make_inter_company_purchase_invoice(si_name)
         pi.company = self.to_company
         pi.supplier = self.get_internal_supplier(self.company)
+        pi.credit_to = ensure_ict_accounts(self.to_company)["payable"]
         pi.represents_company = frappe.db.get_value("Supplier", pi.supplier, "represents_company")
         pi.company_gstin = frappe.get_cached_value("Company", self.to_company, "gstin") or ""
         pi.supplier_gstin = frappe.get_cached_value("Company", self.company, "gstin") or ""

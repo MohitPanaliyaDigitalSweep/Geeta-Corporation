@@ -1,10 +1,16 @@
+import hashlib
 import json
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
+from fast_entry_app.api.address import set_default_addresses as _set_default_addresses
 from fast_entry_app.api.item import get_invoice_uom as _invoice_uom
 from fast_entry_app.api.item import get_item_uom as _pack_factors
+
+# Repeated Save clicks within this window are treated as the same save and
+# return the already-created invoice instead of creating a duplicate.
+FAST_ENTRY_DEDUP_WINDOW = 120
 
 
 @frappe.whitelist()
@@ -12,6 +18,20 @@ def create_purchase_invoice(data):
     """Create and submit a Purchase Invoice from fast entry data."""
     if isinstance(data, str):
         data = json.loads(data)
+
+    # Dedupe BEFORE validation: validate_purchase_invoice rejects a repeat
+    # bill_no with a hard error, which would pre-empt the graceful
+    # "already saved" return that a double Save click should get.
+    dedup_key = _invoice_dedup_key(data)
+    duplicate = _find_duplicate_invoice(dedup_key)
+    if duplicate:
+        return {
+            "name": duplicate.get("name"),
+            "status": "Draft" if duplicate.get("docstatus") == 0 else "Submitted",
+            "grand_total": duplicate.get("grand_total"),
+            "outstanding_amount": duplicate.get("outstanding_amount"),
+            "duplicate": True,
+        }
 
     # Validate
     errors = validate_purchase_invoice(data)
@@ -47,6 +67,10 @@ def create_purchase_invoice(data):
     buying_price_list = frappe.db.get_value("Buying Settings", None, "buying_price_list")
     if buying_price_list:
         pi.buying_price_list = buying_price_list
+
+    # Populate supplier + company (billing) address from the default Address
+    # records, mirroring the Desk form (kept blank on the API path before).
+    _set_default_addresses(pi)
 
     # Set warehouse at header level if provided
     if data.get("warehouse"):
@@ -190,6 +214,9 @@ def create_purchase_invoice(data):
     pi.run_method("calculate_taxes_and_totals")
 
     # Insert and submit
+    if dedup_key:
+        pi.fe_dedup_key = dedup_key
+
     pi.insert(ignore_permissions=True)
     pi.submit()
 
@@ -396,3 +423,69 @@ def _apply_manual_taxes(pi, company, tax_rate, gst_type, company_doc, freight_ro
             "rate": half_rate,
             "cost_center": company_doc.cost_center or "",
         })
+
+
+def _invoice_dedup_key(data):
+    """Stable fingerprint of a purchase payload used to de-duplicate save clicks.
+
+    Built from the business-critical fields only. Items are sorted by item_code
+    so row order is ignored. Mirrors the Sales Invoice fingerprint in sales.py.
+    """
+    items = []
+    for it in data.get("items") or []:
+        item_code = str(it.get("item_code") or "").strip()
+        if not item_code:
+            continue
+        items.append(
+            {
+                "item_code": item_code,
+                "box": flt(it.get("box")),
+                "pcs": flt(it.get("pcs")),
+                "ltr": flt(it.get("ltr")),
+                "rate": flt(it.get("rate")),
+            }
+        )
+    if not items:
+        return ""
+
+    items.sort(key=lambda i: i["item_code"])
+
+    canonical = {
+        "company": (data.get("company") or "").strip(),
+        "supplier": (data.get("supplier") or "").strip(),
+        "posting_date": str(getdate(data.get("posting_date") or nowdate())),
+        "bill_no": str(data.get("bill_no") or "").strip(),
+        "bill_date": str(getdate(data.get("bill_date") or data.get("posting_date") or nowdate())),
+        "gst_type": (data.get("gst_type") or "").lower(),
+        "tax_override": flt(data.get("tax_override")),
+        "warehouse": (data.get("warehouse") or "").strip(),
+        "update_stock": 1 if data.get("update_stock") else 0,
+        "discount": flt(data.get("discount")),
+        "apply_discount_on": (data.get("apply_discount_on") or "Net Total").strip(),
+        "freight": flt(data.get("freight")),
+        "items": items,
+    }
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _find_duplicate_invoice(dedup_key):
+    """Return a recently-created purchase invoice with the same dedup key, if any."""
+    if not dedup_key or not frappe.db.has_column("Purchase Invoice", "fe_dedup_key"):
+        return None
+
+    cutoff = frappe.utils.add_to_date(
+        frappe.utils.now_datetime(), seconds=-FAST_ENTRY_DEDUP_WINDOW
+    )
+    rows = frappe.db.get_all(
+        "Purchase Invoice",
+        filters={
+            "fe_dedup_key": dedup_key,
+            "docstatus": ["in", [0, 1]],
+            "creation": [">=", cutoff],
+        },
+        fields=["name", "docstatus", "grand_total", "outstanding_amount"],
+        order_by="creation desc",
+        limit_page_length=1,
+    )
+    return rows[0] if rows else None

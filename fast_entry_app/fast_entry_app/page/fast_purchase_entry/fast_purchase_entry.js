@@ -642,19 +642,21 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             this.items.forEach(row => { if (row.gst_rate > 0) total_gst_rate = row.gst_rate; });
         }
 
-        // ERPNext-exact totals, following the Discount On selector:
-        // - Net Total (default): the discount comes off the bill net at bill
-        //   level, and GST is charged on the discounted net.
-        // - Grand Total: GST is charged on the FULL pre-discount net (plus
-        //   freight when present) and the discount comes off the grand total.
+        // ERPNext-exact totals, mode-aware (Scenario A / Scenario B):
+        //   Net Total   -> discount reduces the taxable value first
+        //   Grand Total -> post-tax discount; GST stays on the full value
+        // GST is charged on (taxable + freight), and the payable is always
+        //   grand = (sub - D) + freight + GST.
         // When freight is present the server puts the freight Actual row
         // FIRST and the GST rows point at it ("On Previous Row Total"), so
-        // GST covers the taxable base + freight in both modes.
+        // GST covers the taxable base + freight.
+        const rate_frac = total_gst_rate / 100;
         const apply_on = (this.$discount_on && this.$discount_on.val()) || "Net Total";
-        const disc_base = apply_on === "Net Total" ? sub_total - discount : sub_total;
-        const main_base = disc_base + (freight > 0 ? freight : 0);
+        const disc_base = sub_total - discount;
+        const taxable = apply_on === "Grand Total" ? sub_total : disc_base;
+        const main_base = taxable + (freight > 0 ? freight : 0);
         const main_tax = main_base * total_gst_rate / 100;
-        const grand_raw = sub_total - discount + freight + main_tax;
+        const grand_raw = disc_base + freight + main_tax;
 
         let cgst = 0, sgst = 0, igst = 0;
         if (total_gst_rate > 0) {
@@ -678,7 +680,13 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$root.find("#fe-igst-amt").text(igst.toFixed(2));
         this.$root.find("#fe-round-off").text(round_off.toFixed(2));
         this.$root.find("#fe-net-total").text(net_total.toFixed(2));
-        this.$root.find("#fe-discount-warn").toggleClass("fe-show", discount > sub_total);
+        // "Grand Total" mode is rejected by the engine when the discount
+        // reaches the distribution base sub * (1 + rate); Net Total stays
+        // free for genuine 100%-off invoices (discount > sub only).
+        const disc_over = apply_on === "Grand Total"
+            ? (sub_total > 0 && discount >= sub_total * (1 + rate_frac))
+            : discount > sub_total;
+        this.$root.find("#fe-discount-warn").toggleClass("fe-show", disc_over && sub_total > 0);
 
         if (gst_type === "intra") { this.$root.find("#fe-cgst-row, #fe-sgst-row").show(); this.$root.find("#fe-igst-row").hide(); }
         else { this.$root.find("#fe-cgst-row, #fe-sgst-row").hide(); this.$root.find("#fe-igst-row").show(); }
@@ -724,9 +732,11 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
     }
 
     save(on_success) {
+        if (this._saving) return;
         const errors = this.validate();
         if (errors.length) { frappe.msgprint({title:"Validation Error", indicator:"red", message:errors.join("<br>")}); return; }
         const self = this;
+        this._saving = true;
         const data = this.get_save_data();
         self.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Saving...</span>');
         frappe.call({
@@ -735,6 +745,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             freeze: true,
             freeze_message: __("Creating Purchase Invoice..."),
             callback: function(r) {
+                self._saving = false;
                 if (r.message && r.message.name) {
                     self.last_saved_name = r.message.name;
                     frappe.show_alert({ message: __("Invoice {0} saved", [r.message.name]), indicator: "green" });
@@ -743,6 +754,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                 }
             },
             error: function() {
+                self._saving = false;
                 self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Save failed</span>');
             },
         });

@@ -188,8 +188,8 @@
    "label": "Send Defaults"
   },
   {
-   "default": "Test Print Format",
-   "description": "Print Format used for the WhatsApp PDF (Sales Invoice).",
+   "default": "",
+   "description": "Print Format used for the WhatsApp PDF (Sales Invoice). Blank = the invoice's default print format.",
    "fieldname": "wa_print_format",
    "fieldtype": "Data",
    "label": "WhatsApp Print Format"

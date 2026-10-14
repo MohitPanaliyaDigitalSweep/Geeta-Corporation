@@ -173,9 +173,7 @@ def create_bulk_payment(company, party_type, party, amount, mode_of_payment=None
     pe.reference_date = reference_date or pe.posting_date
     pe.remarks = "Bulk payment via Fast Entry"
 
-    default_bank = frappe.db.get_value("Company", company, "default_bank_account") or _first_bank_account(company)
-    if not default_bank:
-        frappe.throw(_("No Bank Account found for company {0}. Set a default bank account.").format(company))
+    default_bank = _resolve_bank_account(company)
 
     if payment_type == "Pay":
         default_payable = frappe.db.get_value("Company", company, "default_payable_account") or _first_account(company, "Payable")
@@ -220,10 +218,36 @@ def _default_mode_of_payment(company):
 
 
 def _first_bank_account(company):
-    acc = frappe.db.get_value("Account", {"company": company, "account_type": "Bank", "is_group": 0}, "name")
-    if acc:
-        return acc
-    return frappe.db.get_value("Account", {"company": company, "account_type": "Bank"}, "name")
+    """First leaf Bank account of the company.
+
+    Group accounts (e.g. the ``Bank Accounts - <abbr>`` root) must never be
+    returned: a Payment Entry cannot post to a group account.
+    """
+    return frappe.db.get_value(
+        "Account",
+        {"company": company, "account_type": "Bank", "is_group": 0},
+        "name",
+    )
+
+
+def _resolve_bank_account(company):
+    """Leaf Bank account to use for a payment.
+
+    Prefers the Company's default bank account, falling back to the first leaf
+    Bank account. Throws an actionable message when none exists or when the
+    resolved account is a group (both would otherwise fail later inside
+    ERPNext with an opaque "group account" error).
+    """
+    account = frappe.db.get_value("Company", company, "default_bank_account") or _first_bank_account(company)
+    if not account:
+        frappe.throw(
+            _("No Bank Account found for company {0}. Create a leaf Bank account and set it as the Company's default bank account.").format(company)
+        )
+    if frappe.db.get_value("Account", account, "is_group"):
+        frappe.throw(
+            _("Account {0} is a group account and cannot be used for payments. Set a leaf Bank account as the default for company {1}.").format(account, company)
+        )
+    return account
 
 
 def _first_account(company, account_type):
@@ -445,9 +469,7 @@ def _make_supplier_payment(company, supplier, rows, data):
     pe.reference_date = getdate(data.get("reference_date")) or pe.posting_date
     pe.remarks = data.get("remarks") or "Bulk supplier payment via Fast Entry"
 
-    default_bank = frappe.db.get_value("Company", company, "default_bank_account") or _first_bank_account(company)
-    if not default_bank:
-        frappe.throw(_("No Bank Account found for company {0}. Set a default bank account.").format(company))
+    default_bank = _resolve_bank_account(company)
 
     pe.paid_from = default_bank
     pe.paid_to = _supplier_payable_account(company, supplier)
@@ -864,9 +886,7 @@ def _make_customer_payment(company, customer, rows, data):
     pe.reference_date = getdate(data.get("reference_date")) or pe.posting_date
     pe.remarks = data.get("remarks") or "Bulk customer payment via Fast Entry"
 
-    default_bank = frappe.db.get_value("Company", company, "default_bank_account") or _first_bank_account(company)
-    if not default_bank:
-        frappe.throw(_("No Bank Account found for company {0}. Set a default bank account.").format(company))
+    default_bank = _resolve_bank_account(company)
 
     default_receivable = frappe.db.get_value("Company", company, "default_receivable_account") or _first_account(company, "Receivable")
     pe.paid_from = default_receivable
@@ -1184,9 +1204,7 @@ def _make_advance_payment(company, party_type, party, amount, data):
     pe.reference_date = getdate(data.get("reference_date")) or pe.posting_date
     pe.remarks = data.get("remarks") or "Advance payment via Fast Entry"
 
-    default_bank = frappe.db.get_value("Company", company, "default_bank_account") or _first_bank_account(company)
-    if not default_bank:
-        frappe.throw(_("No Bank Account found for company {0}. Set a default bank account.").format(company))
+    default_bank = _resolve_bank_account(company)
 
     # Mirrors _make_supplier_payment / _make_customer_payment exactly: for a
     # Receive money flows Receivable -> Bank, for a Pay it flows Bank -> Payable.

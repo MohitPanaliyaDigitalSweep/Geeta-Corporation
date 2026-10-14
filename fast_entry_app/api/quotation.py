@@ -3,6 +3,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, flt, getdate, nowdate
 
+from fast_entry_app.api.address import set_default_addresses as _set_default_addresses
 from fast_entry_app.api.item import get_invoice_uom as _invoice_uom
 from fast_entry_app.api.sales import _apply_manual_sales_taxes, _get_sales_tax_template, _get_tax_account
 
@@ -40,6 +41,10 @@ def create_quotation(data):
     selling_price_list = frappe.db.get_value("Selling Settings", None, "selling_price_list")
     if selling_price_list:
         qt.selling_price_list = selling_price_list
+
+    # Populate customer / company / shipping address from the default Address
+    # records, mirroring the Desk form (kept blank on the API path before).
+    _set_default_addresses(qt)
 
     delivery_person = (data.get("delivery_person") or "").strip()
     delivery_vehicle = (data.get("delivery_vehicle") or "").strip()

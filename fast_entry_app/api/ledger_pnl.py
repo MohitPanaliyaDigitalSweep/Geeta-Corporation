@@ -1,4 +1,6 @@
 import frappe
+from datetime import date, timedelta
+
 from frappe.utils import flt, getdate, add_months, cstr
 
 MONTH_KEYS = [
@@ -124,18 +126,28 @@ def search_accounts(company, search, limit=15):
 
 
 @frappe.whitelist()
-def get_pnl(company, from_date, to_date):
-    """Profit & Loss: income/expense accounts rolled up per month, from GL entries."""
+def get_pnl(company, from_date, to_date, period="year"):
+    """Profit & Loss from the full Chart of Accounts, bucketed by period.
+
+    Every Income/Expense account (leaf AND group, zero or not) is listed with
+    detailed per-period values rolled up from GL entries, so newly created
+    accounts always appear. Net profit = income − expense, computed purely
+    from these COA rows.
+
+    period: "month" (%Y-%m), "year" (%Y) or "week" (ISO %Y-%W, Monday start).
+    """
     from_date, to_date = getdate(from_date), getdate(to_date)
+    if period not in ("month", "year", "week"):
+        period = "year"
 
-    period_keys = []
-    m = from_date
-    while m <= to_date:
-        period_keys.append(cstr(m)[:7])
-        m = add_months(m, 1)
-    period_labels = {k: f"{MONTH_KEYS[int(k[5:7]) - 1]} {k[:4]}" for k in period_keys}
+    if period == "month":
+        bucket_sql = "DATE_FORMAT(gl.posting_date, '%%Y-%%m')"
+    elif period == "year":
+        bucket_sql = "DATE_FORMAT(gl.posting_date, '%%Y')"
+    else:
+        bucket_sql = "DATE_FORMAT(gl.posting_date, '%%Y-%%u')"
 
-    # Account tree
+    # Account tree (the WHOLE Income/Expense COA, groups included)
     all_accounts = frappe.db.sql(
         """
         SELECT name, parent_account, root_type, account_name, is_group
@@ -149,12 +161,15 @@ def get_pnl(company, from_date, to_date):
     children = {}
     for a in all_accounts:
         children.setdefault(a.parent_account or "", []).append(a)
+    for kids in children.values():
+        kids.sort(key=lambda a: a.name)
 
-    # GL amounts per account per month
+    # GL amounts per account per bucket (%% escaped: frappe.db.sql applies %
+    # formatting with the query parameters)
     gl_rows = frappe.db.sql(
         """
         SELECT a.name AS account,
-               DATE_FORMAT(gl.posting_date, '%%Y-%%m') AS ym,
+               {bucket} AS bucket,
                a.root_type,
                SUM(gl.debit) AS debit,
                SUM(gl.credit) AS credit
@@ -163,22 +178,28 @@ def get_pnl(company, from_date, to_date):
         WHERE gl.company = %s AND gl.is_cancelled = 0
           AND gl.posting_date BETWEEN %s AND %s
           AND a.root_type IN ('Income', 'Expense')
-        GROUP BY gl.account, DATE_FORMAT(gl.posting_date, '%%Y-%%m')
-        """,
+        GROUP BY gl.account, {bucket}
+        """.replace("{bucket}", bucket_sql),
         (company, from_date, to_date),
         as_dict=True,
     )
 
-    # own[account][period] = signed amount (positive = income direction)
+    # own[account][bucket] = signed amount (positive = income direction)
     own = {}
+    buckets = set()
     for r in gl_rows:
+        buckets.add(r.bucket)
         amount = (flt(r.credit) - flt(r.debit)) if r.root_type == "Income" else (flt(r.debit) - flt(r.credit))
-        own.setdefault(r.account, {})[r.ym] = amount
+        own.setdefault(r.account, {})[r.bucket] = amount
+
+    # Period axis: every bucket inside the range, even with no postings, so
+    # columns are stable. Derived from the date range (not just posted data).
+    period_keys = _period_axis(from_date, to_date, period, buckets)
 
     memo = {}
 
-    def compute(account, is_root_child=False):
-        """Return {period: amount} for an account including its subtree."""
+    def compute(account):
+        """Return {bucket: amount} for an account including its subtree."""
         if account in memo:
             return memo[account]
         totals = dict(own.get(account, {}))
@@ -189,55 +210,88 @@ def get_pnl(company, from_date, to_date):
         memo[account] = totals
         return totals
 
+    def emit(rows, account, indent):
+        """Append a group row (with subtree subtotal) or leaf row. Groups
+        always render, even at zero, so the full COA stays visible."""
+        a = by_name[account]
+        totals = compute(account)
+        rows.append({
+            "name": account,
+            "root_type": a.root_type,
+            "indent": indent,
+            "is_group": bool(a.is_group),
+            "periods": {k: flt(totals.get(k)) for k in period_keys},
+            "total": sum(flt(totals.get(k)) for k in period_keys),
+        })
+        if a.is_group:
+            for child in children.get(account, []):
+                emit(rows, child.name, indent + 1)
+
     income_rows = []
     expense_rows = []
     for root_child in children.get("", []):
-        root_totals = compute(root_child.name)
-        if not any(flt(v) for v in root_totals.values()):
-            continue
         target = income_rows if root_child.root_type == "Income" else expense_rows
-        if root_child.is_group:
-            _append_children(target, root_child.name, children, own, memo, period_keys, compute)
-        else:
-            target.append({
-                "name": root_child.name,
-                "root_type": root_child.root_type,
-                "indent": 0,
-                "periods": {k: flt(root_totals.get(k)) for k in period_keys},
-                "total": sum(flt(root_totals.get(k)) for k in period_keys),
-            })
+        emit(target, root_child.name, 0)
 
-    rows = income_rows + expense_rows
-
-    income_total = sum(flt(r["total"]) for r in income_rows)
-    expense_total = sum(flt(r["total"]) for r in expense_rows)
+    # Totals over TOP-LEVEL rows only (their subtotals already include children)
+    top = [r for r in income_rows if r["indent"] == 0]
+    income_total = sum(flt(r["total"]) for r in top)
+    top = [r for r in expense_rows if r["indent"] == 0]
+    expense_total = sum(flt(r["total"]) for r in top)
     net = income_total - expense_total
 
+    if period == "month":
+        period_labels = {k: f"{MONTH_KEYS[int(k[5:7]) - 1]} {k[:4]}" for k in period_keys}
+    elif period == "year":
+        period_labels = {k: k for k in period_keys}
+    else:
+        period_labels = {}
+        for k in period_keys:
+            y, w = k.split("-")
+            monday = date(int(y), 1, 4) + timedelta(weeks=int(w) - 1) - timedelta(days=date(int(y), 1, 4).isoweekday() - 1)
+            period_labels[k] = "W%s (%s)" % (w.lstrip("0") or "0", monday.strftime("%d %b"))
+
     return {
+        "period": period,
         "periods": period_keys,
         "period_labels": period_labels,
-        "rows": rows,
+        "rows": income_rows + expense_rows,
         "income_total": income_total,
         "expense_total": expense_total,
         "net_profit": net,
     }
 
 
-def _append_children(rows, parent, children, own, memo, period_keys, compute, indent=0):
-    for child in children.get(parent, []):
-        if child.is_group:
-            _append_children(rows, child.name, children, own, memo, period_keys, compute, indent + 1)
-        else:
-            totals = memo.get(child.name) or compute(child.name)
-            if not any(flt(v) for v in totals.values()):
-                continue
-            rows.append({
-                "name": child.name,
-                "root_type": child.root_type,
-                "indent": indent,
-                "periods": {k: flt(totals.get(k)) for k in period_keys},
-                "total": sum(flt(totals.get(k)) for k in period_keys),
-            })
+def _period_axis(from_date, to_date, period, buckets):
+    """Chronological bucket keys covering the range (stable columns)."""
+    if period == "month":
+        keys, m = [], from_date.replace(day=1)
+        while m <= to_date:
+            keys.append(cstr(m)[:7])
+            m = add_months(m, 1)
+        return keys
+    if period == "year":
+        return [str(y) for y in range(from_date.year, to_date.year + 1)]
+    # week: every ISO week touching the range
+    keys = []
+    seen = set()
+    d = from_date
+    one_day = timedelta(days=1)
+    while d <= to_date:
+        iso_y, iso_w, _ = d.isocalendar()
+        k = "%d-%02d" % (iso_y, iso_w)
+        if k not in seen:
+            seen.add(k)
+            keys.append(k)
+        d += one_day
+    # include posted buckets outside walk (defensive; same sort order)
+    for k in sorted(buckets):
+        if k not in seen:
+            seen.add(k)
+            keys.append(k)
+    return sorted(keys)
+
+
 
 
 @frappe.whitelist()
