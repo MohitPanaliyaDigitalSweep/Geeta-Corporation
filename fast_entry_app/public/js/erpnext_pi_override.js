@@ -57,21 +57,22 @@ fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
         set("fe_pcs", box * nf);
     }
 
-    // UOM/factor come from the Item master, never hardcoded "Nos"/1.0 -- see
-    // get_invoice_uom(). Set before qty: ERPNext recalculates qty when
-    // conversion_factor changes.
+    // Pack breakdown always auto-fills (Box/PCS/LTR/Total LTR).
     set("fe_ltr", ltr_per_piece);
     set("fe_total_ltr", flt(row.fe_pcs || 0) * ltr_per_piece);
 
-    var invoice_uom = uom.invoice_uom || "Nos";
-    if (row.uom !== invoice_uom) {
-        frappe.model.set_value(cdt, cdn, "uom", invoice_uom);
+    // UOM/qty override only for invoice-type doctypes where the app books
+    // qty = pieces in the item's invoice UOM. Other doctypes keep their own
+    // stock-UOM qty and just get the pack breakdown above.
+    var invoice_doctypes = ["Sales Invoice", "Purchase Invoice", "Quotation", "Sales Order", "Purchase Order"];
+    if (invoice_doctypes.indexOf(frm.doctype) !== -1) {
+        var invoice_uom = uom.invoice_uom || "Nos";
+        if (row.uom !== invoice_uom) {
+            frappe.model.set_value(cdt, cdn, "uom", invoice_uom);
+        }
+        set("conversion_factor", flt(uom.conversion_factor) || 1);
+        set("qty", flt(row.fe_pcs) || 0);
     }
-    set("conversion_factor", flt(uom.conversion_factor) || 1);
-
-    // qty is pieces: rate is per-PCS and the server books qty = pcs. Written last
-    // so it survives the UOM write above.
-    set("qty", flt(row.fe_pcs) || 0);
 };
 
 // ---- item row wiring: Box and PCS are both editable and drive each other ----
@@ -90,8 +91,25 @@ function _fe_item_handlers() {
     };
 }
 
-frappe.ui.form.on("Purchase Invoice Item", _fe_item_handlers());
-frappe.ui.form.on("Sales Invoice Item", _fe_item_handlers());
+// All item child tables that carry fe_box/fe_pcs/fe_ltr/fe_total_ltr.
+var _FE_ITEM_TABLES = [
+    "Purchase Invoice Item", "Sales Invoice Item", "Quotation Item",
+    "Sales Order Item", "Purchase Order Item", "Delivery Note Item",
+    "Purchase Receipt Item", "Stock Entry Detail",
+    "Asset Capitalization Service Item", "Asset Movement Item",
+    "BOM Creator Item", "BOM Item", "BOM Secondary Item", "BOM Website Item",
+    "Bill of Entry Item", "Blanket Order Item", "Installation Note Item",
+    "Landed Cost Item", "Material Request Item", "Opportunity Item",
+    "POS Invoice Item", "Packed Item", "Packing Slip Item", "Pick List Item",
+    "Product Bundle Item", "Request for Quotation Item", "Serial and Batch Entry",
+    "Stock Reconciliation Item", "Subcontracting Inward Order Item",
+    "Subcontracting Inward Order Service Item", "Subcontracting Order Item",
+    "Subcontracting Order Service Item", "Subcontracting Receipt Item",
+    "Supplier Quotation Item", "Work Order Additional Item"
+];
+_FE_ITEM_TABLES.forEach(function(dt) {
+    try { frappe.ui.form.on(dt, _fe_item_handlers()); } catch (e) { /* doctype may not be installed */ }
+});
 
 // ---- update_stock defaults on, but stays editable ----
 

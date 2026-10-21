@@ -27,7 +27,7 @@ add_to_apps_screen = [
 # public files (only *.bundle.* get hashed names), so without this suffix users
 # keep running stale JS/CSS for half a day. Bump the suffix on every release
 # that touches public/css or public/js.
-_FE_ASSET_V = "20261014a"
+_FE_ASSET_V = "20261021a"
 app_include_css = [
     f"/assets/fast_entry_app/css/fast_entry_app.css?v={_FE_ASSET_V}",
     f"/assets/fast_entry_app/css/fast_purchase_entry.css?v={_FE_ASSET_V}",
@@ -52,6 +52,32 @@ doctype_js = {
     "Purchase Invoice": "public/js/erpnext_pi_override.js",
     "Sales Invoice": "public/js/erpnext_pi_override.js",
     "Quotation": "public/js/erpnext_pi_override.js",
+    "Sales Order": "public/js/erpnext_pi_override.js",
+    "Purchase Order": "public/js/erpnext_pi_override.js",
+    "Delivery Note": "public/js/erpnext_pi_override.js",
+    "Purchase Receipt": "public/js/erpnext_pi_override.js",
+    "Stock Entry": "public/js/erpnext_pi_override.js",
+    "Asset Capitalization": "public/js/erpnext_pi_override.js",
+    "Asset Movement": "public/js/erpnext_pi_override.js",
+    "BOM": "public/js/erpnext_pi_override.js",
+    "BOM Creator": "public/js/erpnext_pi_override.js",
+    "Bill of Entry": "public/js/erpnext_pi_override.js",
+    "Blanket Order": "public/js/erpnext_pi_override.js",
+    "Installation Note": "public/js/erpnext_pi_override.js",
+    "Landed Cost Voucher": "public/js/erpnext_pi_override.js",
+    "Material Request": "public/js/erpnext_pi_override.js",
+    "Opportunity": "public/js/erpnext_pi_override.js",
+    "POS Invoice": "public/js/erpnext_pi_override.js",
+    "Packing Slip": "public/js/erpnext_pi_override.js",
+    "Pick List": "public/js/erpnext_pi_override.js",
+    "Product Bundle": "public/js/erpnext_pi_override.js",
+    "Request for Quotation": "public/js/erpnext_pi_override.js",
+    "Stock Reconciliation": "public/js/erpnext_pi_override.js",
+    "Subcontracting Inward Order": "public/js/erpnext_pi_override.js",
+    "Subcontracting Order": "public/js/erpnext_pi_override.js",
+    "Subcontracting Receipt": "public/js/erpnext_pi_override.js",
+    "Supplier Quotation": "public/js/erpnext_pi_override.js",
+    "Work Order": "public/js/erpnext_pi_override.js",
 }
 
 # Splice the Fast Entry Box / Pcs / Ltr pack-UOM columns into the standard
