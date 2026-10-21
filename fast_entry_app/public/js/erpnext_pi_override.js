@@ -61,18 +61,14 @@ fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
     set("fe_ltr", ltr_per_piece);
     set("fe_total_ltr", flt(row.fe_pcs || 0) * ltr_per_piece);
 
-    // UOM/qty override only for invoice-type doctypes where the app books
-    // qty = pieces in the item's invoice UOM. Other doctypes keep their own
-    // stock-UOM qty and just get the pack breakdown above.
-    var invoice_doctypes = ["Sales Invoice", "Purchase Invoice", "Quotation", "Sales Order", "Purchase Order"];
-    if (invoice_doctypes.indexOf(frm.doctype) !== -1) {
-        var invoice_uom = uom.invoice_uom || "Nos";
-        if (row.uom !== invoice_uom) {
-            frappe.model.set_value(cdt, cdn, "uom", invoice_uom);
-        }
-        set("conversion_factor", flt(uom.conversion_factor) || 1);
-        set("qty", flt(row.fe_pcs) || 0);
+    // Qty is always PCS (pieces) in every doctype, exactly like Sales/Purchase
+    // Invoice: the app books qty = fe_pcs in the item's invoice UOM.
+    var invoice_uom = uom.invoice_uom || "Nos";
+    if (row.uom !== invoice_uom) {
+        frappe.model.set_value(cdt, cdn, "uom", invoice_uom);
     }
+    set("conversion_factor", flt(uom.conversion_factor) || 1);
+    set("qty", flt(row.fe_pcs) || 0);
 };
 
 // ---- item row wiring: Box and PCS are both editable and drive each other ----
