@@ -27,7 +27,7 @@ add_to_apps_screen = [
 # public files (only *.bundle.* get hashed names), so without this suffix users
 # keep running stale JS/CSS for half a day. Bump the suffix on every release
 # that touches public/css or public/js.
-_FE_ASSET_V = "20261021b"
+_FE_ASSET_V = "20261021c"
 app_include_css = [
     f"/assets/fast_entry_app/css/fast_entry_app.css?v={_FE_ASSET_V}",
     f"/assets/fast_entry_app/css/fast_purchase_entry.css?v={_FE_ASSET_V}",

@@ -1,12 +1,15 @@
 frappe.provide("fast_entry_app");
 fast_entry_app._uom_cache = {};
+fast_entry_app._setting = {};
 
 fast_entry_app.load_uom = function(frm, cdt, cdn, source) {
     var row = locals[cdt][cdn];
     if (!row.item_code) return;
 
     if (fast_entry_app._uom_cache[row.item_code]) {
-        fast_entry_app.calc_row(frm, cdt, cdn, source);
+        setTimeout(function() {
+            fast_entry_app.calc_row(frm, cdt, cdn, source);
+        }, 50);
         return;
     }
 
@@ -16,13 +19,20 @@ fast_entry_app.load_uom = function(frm, cdt, cdn, source) {
         callback: function(r) {
             if (r && r.message) {
                 fast_entry_app._uom_cache[row.item_code] = r.message;
-                fast_entry_app.calc_row(frm, cdt, cdn, source);
+                // Small delay so parent doctype's own item_code callback
+                // (e.g. Stock Entry's get_item_details) finishes first.
+                setTimeout(function() {
+                    fast_entry_app.calc_row(frm, cdt, cdn, source);
+                }, 50);
+            } else {
+                fast_entry_app._setting[cdn] = false;
             }
         }
     });
 };
 
 fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
+    fast_entry_app._setting[cdn] = true;
     var row = locals[cdt][cdn];
     var uom = fast_entry_app._uom_cache[row.item_code];
     if (!uom) return;
@@ -49,12 +59,13 @@ fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
         set("fe_pcs", box * nf);
     } else if (!box && !pcs) {
         // Fresh item pick: seed Box/PCS from the Item master exactly like the
-        // fast entry pages do (one box when the item is packed in a Box).
+        // fast entry pages do (one box when the item is packed in a Box, else
+        // one piece so qty is never zero).
         box = uom.has_box ? 1 : 0;
         set("fe_box", box);
-        set("fe_pcs", box * nf);
+        set("fe_pcs", box ? box * nf : 1);
     } else if (!pcs) {
-        set("fe_pcs", box * nf);
+        set("fe_pcs", box ? box * nf : 1);
     }
 
     // Pack breakdown always auto-fills (Box/PCS/LTR/Total LTR).
@@ -69,6 +80,7 @@ fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
     }
     set("conversion_factor", flt(uom.conversion_factor) || 1);
     set("qty", flt(row.fe_pcs) || 0);
+    fast_entry_app._setting[cdn] = false;
 };
 
 // ---- item row wiring: Box and PCS are both editable and drive each other ----
@@ -76,6 +88,7 @@ fast_entry_app.calc_row = function(frm, cdt, cdn, source) {
 function _fe_item_handlers() {
     return {
         item_code: function(frm, cdt, cdn) {
+            fast_entry_app._setting[cdn] = true;
             fast_entry_app.load_uom(frm, cdt, cdn, "item");
         },
         fe_box: function(frm, cdt, cdn) {
@@ -83,6 +96,16 @@ function _fe_item_handlers() {
         },
         fe_pcs: function(frm, cdt, cdn) {
             fast_entry_app.load_uom(frm, cdt, cdn, "pcs");
+        },
+        qty: function(frm, cdt, cdn) {
+            // Re-apply calc when the parent doctype's own item_code handler
+            // sets qty (e.g. Stock Entry's get_item_details). This ensures
+            // fe_* fields are populated and qty ends up as PCS.
+            if (fast_entry_app._setting[cdn]) return;
+            var row = locals[cdt][cdn];
+            if (row && row.item_code && fast_entry_app._uom_cache[row.item_code]) {
+                fast_entry_app.calc_row(frm, cdt, cdn, "item");
+            }
         }
     };
 }
