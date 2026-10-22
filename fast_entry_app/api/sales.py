@@ -143,9 +143,10 @@ def create_sales_invoice(data):
     if data.get("warehouse"):
         si.set_warehouse = data.get("warehouse")
 
-    # Create stock impact (delivery note + stock entry) on submit when enabled
-    if data.get("update_stock"):
-        si.update_stock = 1
+    # Create stock impact (delivery note + stock entry) on submit when enabled.
+    # Must always set explicitly (0 when disabled) because the Property Setter
+    # default of 1 (added Oct-6) would otherwise leak through on unchecked invoices.
+    si.update_stock = 1 if data.get("update_stock") else 0
 
     delivery_person = (data.get("delivery_person") or "").strip()
     delivery_vehicle = (data.get("delivery_vehicle") or "").strip()

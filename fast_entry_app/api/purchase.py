@@ -76,9 +76,10 @@ def create_purchase_invoice(data):
     if data.get("warehouse"):
         pi.set_warehouse = data.get("warehouse")
 
-    # Create stock impact (purchase receipt + stock entry) on submit when enabled
-    if data.get("update_stock"):
-        pi.update_stock = 1
+    # Create stock impact (purchase receipt + stock entry) on submit when enabled.
+    # Must always set explicitly (0 when disabled) because the Property Setter
+    # default of 1 (added Oct-6) would otherwise leak through on unchecked invoices.
+    pi.update_stock = 1 if data.get("update_stock") else 0
 
     # Append items
     for item_data in items:
