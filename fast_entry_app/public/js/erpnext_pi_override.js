@@ -373,10 +373,20 @@ function add_send_buttons(frm) {
     }
 }
 
+// ---- lock update_stock on Fast Entry invoices (fe_dedup_key present) ----
+
+function lock_update_stock_on_fast_entry(frm) {
+    // Only on saved documents created via Fast Entry. Manual invoices stay
+    // fully editable.
+    if (!frm.doc || !frm.doc.fe_dedup_key) return;
+    frm.set_df_property("update_stock", "read_only", 1);
+}
+
 frappe.ui.form.on("Sales Invoice", {
     refresh: function(frm) {
         add_send_buttons(frm);
         default_update_stock(frm);
+        lock_update_stock_on_fast_entry(frm);
     }
 });
 
@@ -384,6 +394,7 @@ frappe.ui.form.on("Purchase Invoice", {
     refresh: function(frm) {
         add_send_buttons(frm);
         default_update_stock(frm);
+        lock_update_stock_on_fast_entry(frm);
     }
 });
 
