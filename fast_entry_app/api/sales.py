@@ -144,9 +144,14 @@ def create_sales_invoice(data):
         si.set_warehouse = data.get("warehouse")
 
     # Create stock impact (delivery note + stock entry) on submit when enabled.
-    # Must always set explicitly (0 when disabled) because the Property Setter
-    # default of 1 (added Oct-6) would otherwise leak through on unchecked invoices.
+    # Always set explicitly (0 when disabled) — do not rely on ERPNext's default
+    # or any Property Setter. When disabled, also clear item warehouses so
+    # ERPNext has no stock target even if a warehouse is present on rows.
     si.update_stock = 1 if data.get("update_stock") else 0
+    if not si.update_stock:
+        si.set_warehouse = ""
+        for row in si.items:
+            row.warehouse = ""
 
     delivery_person = (data.get("delivery_person") or "").strip()
     delivery_vehicle = (data.get("delivery_vehicle") or "").strip()

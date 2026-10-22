@@ -69,15 +69,11 @@ PROPERTY_SETTERS = [
 	("Sales Invoice Item", "item_name", "in_list_view", "1", "Check"),
 	("Sales Invoice Item", "warehouse", "in_list_view", "0", "Check"),
 	("Sales Invoice Item", "qty", "label", "Accepted Qty", "Data"),
-	# Pre-tick "Update Stock" on new manual Sales/Purchase Invoices in the
-	# standard ERPNext form. This lives at the metadata level (not just the
-	# client script in erpnext_pi_override.js) so it works regardless of
-	# browser cache or whether that script loads. Never put this in a fixture:
-	# a Property Setter whose doc_type is an ERPNext doctype crashes install
-	# when ERPNext is absent. Stay editable (users may still uncheck for
-	# service / consolidated invoices).
-	("Sales Invoice", "update_stock", "default", "1", "Check"),
-	("Purchase Invoice", "update_stock", "default", "1", "Check"),
+	# Do NOT force a default on Sales/Purchase Invoice.update_stock — let
+	# ERPNext's own default control it. Fast Entry sets it explicitly from the
+	# payload below (1 when ticked, 0 when unticked), so unticking truly
+	# prevents stock impact. A Property Setter default of "1" would override
+	# ERPNext's default and leak through on unchecked invoices.
 	# A collapsible Section Break with no collapsible_depends_on renders
 	# COLLAPSED by default (frappe/public/js/frappe/form/layout.js:500-511:
 	# `collapse = true` unless the depends_on expression is truthy). The

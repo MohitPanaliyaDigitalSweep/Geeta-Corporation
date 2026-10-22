@@ -77,9 +77,14 @@ def create_purchase_invoice(data):
         pi.set_warehouse = data.get("warehouse")
 
     # Create stock impact (purchase receipt + stock entry) on submit when enabled.
-    # Must always set explicitly (0 when disabled) because the Property Setter
-    # default of 1 (added Oct-6) would otherwise leak through on unchecked invoices.
+    # Always set explicitly (0 when disabled) — do not rely on ERPNext's default
+    # or any Property Setter. When disabled, also clear item warehouses so
+    # ERPNext has no stock target even if a warehouse is present on rows.
     pi.update_stock = 1 if data.get("update_stock") else 0
+    if not pi.update_stock:
+        pi.set_warehouse = ""
+        for row in pi.items:
+            row.warehouse = ""
 
     # Append items
     for item_data in items:
