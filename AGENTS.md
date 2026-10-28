@@ -63,14 +63,15 @@ Server only set `si.update_stock = 1` when enabled, never reset to `0`. The desk
 - `hrms/frontend/src/components/FastEntryItems.vue`, `hrms/frontend/src/views/FastSalesEntry.vue`
 - `AGENTS.md`
 
-## Latest change: optional "Apply GST" toggle (sales + purchase)
+## Latest change: optional "Apply GST" toggle (sales + purchase + quotation)
 **Goal:** Allow creating Sales/Purchase invoices without GST when the "Apply GST" checkbox is unchecked. When unchecked, no tax rows are added (neither manual override nor India Compliance auto-template), and totals preview shows 0 tax.
 
 ### Server
 - `api/sales.py`: `apply_gst = 1 if data.get("apply_gst", 1) else 0`. When 0, skip tax application; after insert, strip any auto-added tax rows (keeping freight actual row). Added `apply_gst` to dedup key.
 - `api/purchase.py`: same logic + dedup key update.
+- `api/quotation.py`: same logic (no dedup key for quotation).
 
-### Desk pages (sales + purchase)
+### Desk pages (sales + purchase + quotation)
 - "Apply GST" checkbox added to header row (checked by default).
 - `update_totals`: when unchecked, `total_gst_rate = 0`.
 - `get_save_data`: includes `apply_gst`.
