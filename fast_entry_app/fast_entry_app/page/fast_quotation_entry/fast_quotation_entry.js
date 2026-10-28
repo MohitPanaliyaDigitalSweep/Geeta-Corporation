@@ -272,6 +272,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                 </div>
                 <div class="fe-item-code">${row.item_code||""}</div>
                 <input type="text" class="fe-grid-input fe-batch-input" data-field="batch_no" value="${row.batch_no||""}" placeholder="Batch (optional)" autocomplete="off" style="display:none;margin-top:2px;font-size:11px;" />
+                <div class="fe-item-stock"></div>
             </td>
             <td class="fe-col-box"><input type="number" class="fe-grid-input fe-num-input" data-field="box" value="${row.box||""}" min="0" step="1" /></td>
             <td class="fe-col-pcs"><input type="number" class="fe-grid-input fe-num-input" data-field="pcs" value="${row.pcs||""}" min="0" /></td>
@@ -404,7 +405,37 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
         $(tr).find("[data-field='ltr']").val(row.ltr ? parseFloat(row.ltr.toFixed(2)) : "");
         $(tr).find("[data-field='qty']").val(row.qty ? parseFloat(row.qty.toFixed(2)) : "");
         $(tr).find(".fe-amount-display").text(this.fmt_currency(row.amount));
+        this.render_stock(row);
         this.update_totals();
+    }
+
+    load_stock(row) {
+        const self = this;
+        const company = this.$company.val();
+        if (!row.item_code) return;
+        if (!company) return;
+        frappe.call({
+            method: "fast_entry_app.api.item.get_item_stock",
+            args: { item_code: row.item_code, company: company },
+            callback: function(r) {
+                if (!r.message) return;
+                const m = r.message;
+                row.wh_stock = (m.current_stock && m.current_stock.actual_qty) || m.total_actual_qty || 0;
+                row.company_stock = m.total_actual_qty || 0;
+                self.render_stock(row);
+            },
+        });
+    }
+
+    render_stock(row) {
+        if (!row._tr) return;
+        const $el = $(row._tr).find(".fe-item-stock");
+        if (!$el.length) return;
+        const stock = this.flt(row.wh_stock);
+        const qty = this.flt(row.qty);
+        const enough = qty > 0 ? stock >= qty : stock > 0;
+        const color = enough ? "#16a34a" : (stock <= 0 ? "#dc2626" : "#f59e0b");
+        $el.text("Stock: " + stock).css({ "color": color, "font-weight": "600", "font-size": "10px", "margin-top": "2px" });
     }
 
     delete_row(row, tr) {
@@ -470,6 +501,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                     $(tr).find(".fe-item-input").val(row.item_name).attr("data-item-code", row.item_code);
                     $(tr).find(".fe-item-code").text(row.item_code);
                     self.calculate_row(row, tr);
+                    self.load_stock(row);
                 }
             },
         });

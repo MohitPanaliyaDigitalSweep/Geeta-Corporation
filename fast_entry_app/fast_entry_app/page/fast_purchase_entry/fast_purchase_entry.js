@@ -414,6 +414,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         $(tr).find("[data-field='ltr']").val(row.ltr || "");
         $(tr).find("[data-field='qty']").val(row.qty || "");
         $(tr).find(".fe-amount-display").text(this.fmt_currency(row.amount));
+        this.render_stock(row);
         this.update_totals();
     }
 
@@ -599,7 +600,12 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         const $el = $(row._tr).find(".fe-item-stock");
         if (!$el.length) return;
         const wh = row.warehouse || this.$warehouse.val() || "-";
-        $el.text("WH " + wh + ": " + this.flt(row.wh_stock) + " | Company: " + this.flt(row.company_stock));
+        const qty = this.flt(row.qty);
+        const stock = this.flt(row.wh_stock);
+        const enough = qty > 0 ? stock >= qty : stock > 0;
+        const color = enough ? "#16a34a" : (stock <= 0 ? "#dc2626" : "#f59e0b");
+        $el.text("WH " + wh + ": " + stock + " | Company: " + this.flt(row.company_stock));
+        $el.css({ "color": color, "font-weight": "600" });
     }
 
     on_warehouse_change() {
