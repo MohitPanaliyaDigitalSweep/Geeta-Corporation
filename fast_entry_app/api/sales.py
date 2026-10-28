@@ -230,6 +230,8 @@ def create_sales_invoice(data):
             "fe_ltr": ltr,
             "fe_total_ltr": total_ltr,
         })
+        if item_data.get("batch_no"):
+            item_row.batch_no = item_data.get("batch_no")
         if frappe.db.has_column("Sales Invoice Item", "gst_hsn_code"):
             item_row.gst_hsn_code = hsn_code
 

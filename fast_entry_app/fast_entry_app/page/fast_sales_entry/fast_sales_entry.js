@@ -283,7 +283,7 @@ fast_entry_app.SalesEntry = class SalesEntry {
 
     add_empty_row() {
         const idx = this.items.length + 1;
-        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, rate:0, amount:0, uom:"", nos_factor:1, litre_factor:0, stock_uom:"", warehouse:"", gst_rate:0, wh_stock:0, company_stock:0 };
+        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, rate:0, amount:0, uom:"", nos_factor:1, litre_factor:0, stock_uom:"", warehouse:"", gst_rate:0, wh_stock:0, company_stock:0, batch_no:"", has_batch_no:false };
         this.items.push(row);
         this.render_row(row);
     }
@@ -300,6 +300,7 @@ fast_entry_app.SalesEntry = class SalesEntry {
                     <input type="text" class="fe-grid-input fe-item-input" data-field="item_code" value="${row.item_name||row.item_code}" placeholder="Search..." autocomplete="off" />
                 </div>
                 <div class="fe-item-code">${row.item_code||""}</div>
+                <input type="text" class="fe-grid-input fe-batch-input" data-field="batch_no" value="${row.batch_no||""}" placeholder="Batch (optional)" autocomplete="off" style="display:none;margin-top:2px;font-size:11px;" />
                 <div class="fe-item-stock"></div>
             </td>
             <td class="fe-col-box"><input type="number" class="fe-grid-input fe-num-input" data-field="box" value="${row.box||""}" min="0" step="1" /></td>
@@ -371,6 +372,30 @@ fast_entry_app.SalesEntry = class SalesEntry {
         $(tr).find("[data-field='pcs']").on("input", function() { row.pcs = self.flt($(this).val()); self.calculate_row(row, tr, "pcs"); });
         $(tr).find("[data-field='ltr']").on("input", function() { row.ltr = self.flt($(this).val()); self.calculate_row(row, tr, "ltr"); });
         $(tr).find("[data-field='rate']").on("input", function() { row.rate = self.flt($(this).val()); self.calculate_row(row, tr, "rate"); });
+        $(tr).find("[data-field='batch_no']").on("input", function() {
+            const val = $(this).val();
+            row.batch_no = val;
+            if (!row.has_batch_no || val.length < 1) { self.hide_global_dropdown(); return; }
+            const wh = row.warehouse || self.$warehouse.val() || "";
+            self.search_batches(row.item_code, wh, val, function(results) {
+                let html = "";
+                results.forEach(function(b) {
+                    const qty_txt = (b.qty !== undefined && b.qty !== null) ? ` <span class="fe-dd-secondary">(${b.qty})</span>` : "";
+                    const exp = b.expiry_date ? ` <span class="fe-dd-secondary">exp ${b.expiry_date}</span>` : "";
+                    html += `<div class="fe-dropdown-item" data-value="${b.name}"><span class="fe-dd-primary">${b.name}</span>${qty_txt}${exp}</div>`;
+                });
+                if (html) {
+                    self.show_global_dropdown($(tr).find("[data-field='batch_no']"), html, function($el) {
+                        $(tr).find("[data-field='batch_no']").val($el.data("value"));
+                        row.batch_no = $el.data("value");
+                        self.hide_global_dropdown();
+                    });
+                } else {
+                    self.hide_global_dropdown();
+                }
+            });
+        });
+        $(tr).find("[data-field='batch_no']").on("focus", function() { if ($(this).val().length >= 1) $(this).trigger("input"); });
         $(tr).find(".fe-delete-row").on("click", function() { self.delete_row(row, tr); });
     }
 
@@ -422,6 +447,13 @@ fast_entry_app.SalesEntry = class SalesEntry {
                     row.item_code = item_code;
                     row.item_name = d.item_name || item_name;
                     row.stock_uom = d.stock_uom;
+                    row.has_batch_no = !!d.has_batch_no;
+                    row.batch_no = "";
+                    if (row.has_batch_no) {
+                        $(tr).find(".fe-batch-input").show();
+                    } else {
+                        $(tr).find(".fe-batch-input").hide().val("");
+                    }
                     row.gst_rate = d.gst_rate || 0;
                     const uoms = (search_uoms && search_uoms.length) ? search_uoms : (d.uoms || []);
                     row.nos_factor = 1;
@@ -461,6 +493,14 @@ fast_entry_app.SalesEntry = class SalesEntry {
         frappe.call({
             method: "fast_entry_app.api.item.search_items",
             args: { search: query, company: this.$company.val() || "", limit: 15 },
+            callback: function(r) { callback(r.message || []); },
+        });
+    }
+
+    search_batches(item_code, warehouse, query, callback) {
+        frappe.call({
+            method: "fast_entry_app.api.item.search_batches",
+            args: { item_code: item_code, warehouse: warehouse || "", search: query || "", limit: 20 },
             callback: function(r) { callback(r.message || []); },
         });
     }
@@ -831,6 +871,7 @@ fast_entry_app.SalesEntry = class SalesEntry {
                 conversion_factor: r.conversion_factor || 1,
                 total_ltr: r.qty || 0,
                 warehouse: r.warehouse, gst_rate: r.gst_rate,
+                batch_no: r.batch_no || "",
             })),
         };
     }

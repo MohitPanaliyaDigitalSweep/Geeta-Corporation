@@ -142,6 +142,14 @@ def create_purchase_invoice(data):
             "fe_ltr": ltr,
             "fe_total_ltr": total_ltr,
         })
+        batch_no = (item_data.get("batch_no") or "").strip()
+        if batch_no:
+            # Create the batch if it doesn't exist yet (purchase receiving
+            # new stock can mint a new batch number). Only batch-tracked items.
+            if frappe.db.get_value("Item", item_code, "has_batch_no") and not frappe.db.exists("Batch", batch_no):
+                from erpnext.stock.doctype.batch.batch import make_batch
+                make_batch(frappe._dict(item=item_code, batch_id=batch_no))
+            item_row.batch_no = batch_no
         if frappe.db.has_column("Purchase Invoice Item", "gst_hsn_code"):
             item_row.gst_hsn_code = hsn_code
 

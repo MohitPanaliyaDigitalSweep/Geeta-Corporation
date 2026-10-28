@@ -29,5 +29,39 @@ Server only set `si.update_stock = 1` when enabled, never reset to `0`. The desk
 - `bench --site dev.localhost clear-cache`: run.
 - No DB migration needed (uses existing `fe_dedup_key` field + Property Setter default `1`).
 
+## Latest change: batch tracking support (optional, sales + purchase)
+**Goal:** Allow selecting/creating a batch number per item row in Fast Sales Entry and Fast Purchase Entry. Not mandatory, but required when the item is batch-tracked.
+
+### API changes
+- `api/item.py`:
+  - `search_items` / `get_item_details` now return `has_batch_no`.
+  - New `search_batches(item_code, warehouse, search, limit)` whitelisted endpoint returns batches (with available qty when warehouse given).
+- `api/sales.py`: item row now sets `item_row.batch_no` from `item_data.batch_no` (must exist).
+- `api/purchase.py`: item row sets `item_row.batch_no`; if the batch doesn't exist and the item is batch-tracked, creates it via `make_batch` (purchase receiving new stock can mint a new batch number).
+
+### Desk pages (sales + purchase)
+- Row object gains `batch_no` and `has_batch_no`.
+- `render_row` adds a hidden `.fe-batch-input` text field below item code; shown when `has_batch_no`.
+- `on_item_selected` sets `row.has_batch_no` from item details and toggles the field.
+- `bind_row_events` wires batch autocomplete (search_batches) for both pages.
+- `get_save_data` includes `batch_no` per item.
+
+### PWA (`www/sales_pwa/index.html`)
+- Item card gains a hidden `.batch-inp` text field; shown when `has_batch_no`.
+- `onItemSelected` sets `row.has_batch_no`.
+- `get_save_data` includes `batch_no`.
+
+### HRMS (`FastEntryItems.vue` + `FastSalesEntry.vue`)
+- Row gains `batchNo`/`hasBatchNo`; batch input shown when `hasBatchNo`.
+- `onSelect` sets `row.hasBatchNo`.
+- `getPayload` includes `batch_no`.
+
+### Files touched
+- `api/item.py`, `api/sales.py`, `api/purchase.py`
+- `page/fast_sales_entry/fast_sales_entry.js`, `page/fast_purchase_entry/fast_purchase_entry.js`
+- `www/sales_pwa/index.html`
+- `hrms/frontend/src/components/FastEntryItems.vue`, `hrms/frontend/src/views/FastSalesEntry.vue`
+- `AGENTS.md`
+
 ## Open items (from prior logs)
 - Purchase-path save dedupe, B2C `NotApplicableError`, `Contact Phone.phone_nos` candidates, zero-stock company rows, PAT revocation, HRMS fork URL.

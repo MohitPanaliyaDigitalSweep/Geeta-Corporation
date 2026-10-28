@@ -26,7 +26,7 @@ def search_items(search, company=None, limit=20):
         "Item",
         filters={},
         or_filters=or_filters,
-        fields=["item_code", "item_name", "stock_uom"],
+        fields=["item_code", "item_name", "stock_uom", "has_batch_no"],
         limit_page_length=limit,
         order_by="item_name asc",
     )
@@ -53,6 +53,7 @@ def get_item_details(item_code, warehouse=None, company=None):
         "item_code": item.item_code,
         "item_name": item.item_name,
         "stock_uom": item.stock_uom,
+        "has_batch_no": bool(item.get("has_batch_no")),
         "description": item.description or "",
         "hsn_code": getattr(item, "gst_hsn_code", "") or "",
         "is_stock_item": item.is_stock_item,
@@ -496,6 +497,44 @@ def _get_income_account(item_code, company):
             return acc
 
     return None
+
+
+@frappe.whitelist()
+def search_batches(item_code, warehouse=None, search="", limit=20):
+    """Search batches for an item (with available stock when warehouse given)."""
+    if not item_code:
+        return []
+    limit = int(limit) or 20
+    filters = {"item": item_code, "disabled": 0}
+    if search:
+        filters["name"] = ["like", f"%{search}%"]
+    batches = frappe.get_all(
+        "Batch",
+        filters=filters,
+        fields=["name", "batch_id", "expiry_date", "manufacturing_date"],
+        limit_page_length=limit,
+        order_by="creation desc",
+    )
+    out = []
+    for b in batches:
+        qty = 0
+        if warehouse:
+            try:
+                from erpnext.stock.doctype.batch.batch import get_batch_qty
+                qty = get_batch_qty(batch_no=b.name, warehouse=warehouse)
+            except Exception:
+                qty = 0
+        out.append({
+            "name": b.name,
+            "batch_id": b.batch_id,
+            "expiry_date": b.expiry_date,
+            "manufacturing_date": b.manufacturing_date,
+            "qty": qty,
+        })
+    # For sales, prefer batches with stock
+    if warehouse:
+        out.sort(key=lambda x: (x.get("qty") or 0), reverse=True)
+    return out
 
 
 def _get_item_rate(item_code, company):

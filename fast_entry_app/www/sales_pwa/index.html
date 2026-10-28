@@ -537,7 +537,7 @@
                 var row = {
                     idx: items.length + 1, item_code: "", item_name: "", box: 0, pcs: 0, ltr: 0,
                     qty: 0, rate: 0, amount: 0, nos_factor: 1, litre_factor: 0, stock_uom: "",
-                    warehouse: "", gst_rate: 0,
+                    warehouse: "", gst_rate: 0, batch_no: "", has_batch_no: false,
                 };
                 items.push(row);
                 renderRow(row);
@@ -555,6 +555,7 @@
                         '<div class="item-input-wrap">' +
                             '<input type="text" class="item-inp" placeholder="Search item..." autocomplete="off">' +
                             '<div class="item-code-hint"></div>' +
+                        '<input type="text" class="batch-inp" placeholder="Batch (optional)" autocomplete="off" style="display:none;margin-top:4px;font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;width:100%;">' +
                         '</div>' +
                         '<button type="button" class="del-item">&times;</button>' +
                     '</div>' +
@@ -611,6 +612,26 @@
                         calcRow(row, b[1]);
                     });
                 });
+
+                var batchInp = el.querySelector(".batch-inp");
+                if (batchInp) {
+                    batchInp.addEventListener("input", function () {
+                        row.batch_no = this.value.trim();
+                        if (!row.has_batch_no || this.value.trim().length < 1) { hideDropdown(); return; }
+                        call("fast_entry_app.api.item.search_batches", { item_code: row.item_code, warehouse: row.warehouse || $("#f-warehouse").dataset.warehouse || "", search: this.value.trim(), limit: 20 }, function (list) {
+                            if (batchInp.value.trim().length < 1) return;
+                            var opts = (list || []).map(function (b) {
+                                return { primary: b.name, secondary: (b.qty !== undefined ? "qty " + b.qty : "") + (b.expiry_date ? " exp " + b.expiry_date : ""), data: b };
+                            });
+                            if (!opts.length) { hideDropdown(); return; }
+                            showDropdown(batchInp, opts, function (o) {
+                                batchInp.value = o.primary;
+                                row.batch_no = o.primary;
+                            });
+                        });
+                    });
+                    batchInp.addEventListener("focus", function () { if (this.value.trim().length >= 1) this.dispatchEvent(new Event("input")); });
+                }
             }
 
             function reindex() {
@@ -655,6 +676,17 @@
                     if (!row.warehouse && $("#f-warehouse").dataset.warehouse) row.warehouse = $("#f-warehouse").dataset.warehouse;
                     else if (d.warehouse) row.warehouse = d.warehouse;
                     if (!row.rate && d.rate) row.rate = flt(d.rate);
+
+                    row.has_batch_no = !!d.has_batch_no;
+                    row.batch_no = "";
+                    var batchInp = row._el.querySelector(".batch-inp");
+                    if (row.has_batch_no) {
+                        batchInp.style.display = "";
+                        batchInp.value = "";
+                    } else {
+                        batchInp.style.display = "none";
+                        batchInp.value = "";
+                    }
 
                     row._el.querySelector(".item-inp").value = row.item_name;
                     row._el.querySelector(".item-code-hint").textContent = row.item_code + (d.gst_rate ? " | GST " + flt(d.gst_rate) + "%" : "");
@@ -777,6 +809,7 @@
                             conversion_factor: r.ltr ? flt(1 / r.ltr) : 1,
                             total_ltr: r.qty || 0,
                             warehouse: r.warehouse, gst_rate: r.gst_rate,
+                            batch_no: r.batch_no || "",
                         };
                     }),
                 };
