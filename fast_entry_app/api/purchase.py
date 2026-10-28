@@ -189,37 +189,39 @@ def create_purchase_invoice(data):
     # + freight. (A separate "On Net Total" freight-GST row would compute on
     # the invoice subtotal instead of the freight, and duplicate CGST/SGST
     # accounts break India Compliance's item-wise GST validation.)
+    apply_gst = 1 if data.get("apply_gst", 1) else 0
     tax_override = flt(data.get("tax_override")) or 0
-    if tax_override > 0:
-        _apply_manual_taxes(pi, company, tax_override, data.get("gst_type", "intra"), company_doc, freight_row_idx)
-    else:
-        tax_template = _get_tax_template(company, data.get("gst_type"))
-        if tax_template:
-            pi.taxes_and_charges = tax_template
-            tmpl = frappe.get_doc("Purchase Taxes and Charges Template", tax_template)
-            if not freight_row_idx:
-                pi.taxes = []
-            for row in tmpl.taxes:
-                if not row.account_head:
-                    continue
-                if "reverse" in (row.description or "").lower():
-                    continue
-                charge_type = row.charge_type
-                row_id = row.row_id
-                if freight_row_idx and charge_type == "On Net Total":
-                    charge_type = "On Previous Row Total"
-                    row_id = freight_row_idx
-                elif row_id:
-                    # Freight row prepended above shifts template row indexes.
-                    row_id = flt(row_id) + freight_row_idx
-                pi.append("taxes", {
-                    "charge_type": charge_type,
-                    "row_id": row_id,
-                    "account_head": row.account_head,
-                    "description": row.description,
-                    "rate": row.rate,
-                    "cost_center": row.cost_center or company_doc.cost_center or "",
-                })
+    if apply_gst:
+        if tax_override > 0:
+            _apply_manual_taxes(pi, company, tax_override, data.get("gst_type", "intra"), company_doc, freight_row_idx)
+        else:
+            tax_template = _get_tax_template(company, data.get("gst_type"))
+            if tax_template:
+                pi.taxes_and_charges = tax_template
+                tmpl = frappe.get_doc("Purchase Taxes and Charges Template", tax_template)
+                if not freight_row_idx:
+                    pi.taxes = []
+                for row in tmpl.taxes:
+                    if not row.account_head:
+                        continue
+                    if "reverse" in (row.description or "").lower():
+                        continue
+                    charge_type = row.charge_type
+                    row_id = row.row_id
+                    if freight_row_idx and charge_type == "On Net Total":
+                        charge_type = "On Previous Row Total"
+                        row_id = freight_row_idx
+                    elif row_id:
+                        # Freight row prepended above shifts template row indexes.
+                        row_id = flt(row_id) + freight_row_idx
+                    pi.append("taxes", {
+                        "charge_type": charge_type,
+                        "row_id": row_id,
+                        "account_head": row.account_head,
+                        "description": row.description,
+                        "rate": row.rate,
+                        "cost_center": row.cost_center or company_doc.cost_center or "",
+                    })
 
     # Set missing values (auto-fills accounts, etc.)
     pi.flags.ignore_permissions = True
@@ -232,6 +234,15 @@ def create_purchase_invoice(data):
         pi.fe_dedup_key = dedup_key
 
     pi.insert(ignore_permissions=True)
+
+    # When GST is disabled, India Compliance may have auto-added tax rows
+    # during validate(). Strip them (keeping the freight actual row, if any).
+    apply_gst = 1 if data.get("apply_gst", 1) else 0
+    if not apply_gst:
+        freight_rows = [t for t in (pi.taxes or []) if (t.description or "") == "Freight / Transport"]
+        pi.taxes = freight_rows
+        pi.taxes_and_charges = ""
+
     pi.submit()
 
     return {
@@ -474,6 +485,7 @@ def _invoice_dedup_key(data):
         "tax_override": flt(data.get("tax_override")),
         "warehouse": (data.get("warehouse") or "").strip(),
         "update_stock": 1 if data.get("update_stock") else 0,
+        "apply_gst": 1 if data.get("apply_gst", 1) else 0,
         "discount": flt(data.get("discount")),
         "apply_discount_on": (data.get("apply_discount_on") or "Net Total").strip(),
         "freight": flt(data.get("freight")),

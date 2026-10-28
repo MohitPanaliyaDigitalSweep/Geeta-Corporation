@@ -229,6 +229,11 @@
                         <option value="28">28%</option>
                     </select>
                 </div>
+                <div class="field" style="display:flex;align-items:center;gap:6px;">
+                    <label style="display:flex;align-items:center;gap:4px;margin:0;">
+                        <input type="checkbox" id="f-apply-gst" checked> Apply GST
+                    </label>
+                </div>
             </div>
             <div class="field" style="position:relative">
                 <label>Warehouse</label>
@@ -720,12 +725,14 @@
 
                 var ovr = flt($("#f-tax-override").value);
                 var gstType = $("#f-gst-type").value;
+                var applyGst = $("#f-apply-gst").checked;
                 var rate = ovr;
                 if (!rate) {
                     for (var i = 0; i < items.length; i++) {
                         if (flt(items[i].gst_rate) > 0) { rate = flt(items[i].gst_rate); break; }
                     }
                 }
+                if (!applyGst) rate = 0;
 
                 // ERPNext-exact totals, mode-aware (Scenario A / Scenario B):
                 //   Net Total   -> discount reduces the taxable value first
@@ -787,6 +794,7 @@
                     posting_date: $("#f-date").value,
                     gst_type: $("#f-gst-type").value,
                     tax_override: flt($("#f-tax-override").value),
+                    apply_gst: $("#f-apply-gst").checked ? 1 : 0,
                     warehouse: $("#f-warehouse").dataset.warehouse || "",
                     update_stock: $("#f-stock-impact").checked ? 1 : 0,
                     auto_einvoice: 0,
@@ -846,6 +854,7 @@
             $("#f-disc-on").addEventListener("change", calcTotals);
             $("#f-tax-override").addEventListener("change", calcTotals);
             $("#f-gst-type").addEventListener("change", calcTotals);
+            $("#f-apply-gst").addEventListener("change", calcTotals);
 
             $("#save").addEventListener("click", function () { doSave(); });
             $("#save-new").addEventListener("click", function () { doSave(clearForm); });

@@ -104,6 +104,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                             <option value="28">Override 28%</option>
                         </select>
                     </div>
+                    <div class="fe-field"><label class="fe-checkbox-label"><input type="checkbox" class="fe-input" id="fe-apply-gst" checked /> Apply GST</label></div>
                     <div class="fe-field"><label>Warehouse</label>
                         <div class="fe-input-wrap fe-autocomplete-wrap">
                             <input type="text" class="fe-input" id="fe-warehouse" placeholder="Default WH" autocomplete="off" />
@@ -229,6 +230,8 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         this.$discount_on.on("change", () => this.update_totals());
         this.$tax_template.on("change", () => this.update_totals());
         this.$gst_type.on("change", () => this.update_totals());
+        this.$apply_gst = this.$root.find("#fe-apply-gst");
+        this.$apply_gst.on("change", () => this.update_totals());
 
         this.bind_supplier_autocomplete();
         this.bind_warehouse_autocomplete();
@@ -676,10 +679,12 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
 
         const tax_override = parseFloat(this.$tax_template.val()) || 0;
         const gst_type = this.$gst_type.val();
+        const apply_gst = (this.$apply_gst && this.$apply_gst.prop("checked")) ? 1 : 0;
         let total_gst_rate = tax_override;
         if (!total_gst_rate) {
             this.items.forEach(row => { if (row.gst_rate > 0) total_gst_rate = row.gst_rate; });
         }
+        if (!apply_gst) total_gst_rate = 0;
 
         // ERPNext-exact totals, mode-aware (Scenario A / Scenario B):
         //   Net Total   -> discount reduces the taxable value first
@@ -752,6 +757,7 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
             posting_date: this.$bill_date.val(),
             gst_type: this.$gst_type.val(),
             tax_override: parseFloat(this.$tax_template.val()) || 0,
+            apply_gst: this.$apply_gst.prop("checked") ? 1 : 0,
             warehouse: this.$warehouse.val(),
             update_stock: this.$stock_impact.prop("checked") ? 1 : 0,
             discount: this.flt(this.$discount.val()),

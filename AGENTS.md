@@ -63,5 +63,30 @@ Server only set `si.update_stock = 1` when enabled, never reset to `0`. The desk
 - `hrms/frontend/src/components/FastEntryItems.vue`, `hrms/frontend/src/views/FastSalesEntry.vue`
 - `AGENTS.md`
 
+## Latest change: optional "Apply GST" toggle (sales + purchase)
+**Goal:** Allow creating Sales/Purchase invoices without GST when the "Apply GST" checkbox is unchecked. When unchecked, no tax rows are added (neither manual override nor India Compliance auto-template), and totals preview shows 0 tax.
+
+### Server
+- `api/sales.py`: `apply_gst = 1 if data.get("apply_gst", 1) else 0`. When 0, skip tax application; after insert, strip any auto-added tax rows (keeping freight actual row). Added `apply_gst` to dedup key.
+- `api/purchase.py`: same logic + dedup key update.
+
+### Desk pages (sales + purchase)
+- "Apply GST" checkbox added to header row (checked by default).
+- `update_totals`: when unchecked, `total_gst_rate = 0`.
+- `get_save_data`: includes `apply_gst`.
+
+### PWA (`www/sales_pwa/index.html`)
+- "Apply GST" checkbox added; `calcTotals` sets rate=0 when unchecked; `get_save_data` includes `apply_gst`.
+
+### HRMS (`FastSalesEntry.vue`)
+- `applyGst` ref (default true); checkbox in invoice section; `effectiveRate` returns 0 when unchecked; payload includes `apply_gst`; reset in `clearForm`.
+
+### Files touched
+- `api/sales.py`, `api/purchase.py`
+- `page/fast_sales_entry/fast_sales_entry.js`, `page/fast_purchase_entry/fast_purchase_entry.js`
+- `www/sales_pwa/index.html`
+- `hrms/frontend/src/views/FastSalesEntry.vue`
+- `AGENTS.md`
+
 ## Open items (from prior logs)
 - Purchase-path save dedupe, B2C `NotApplicableError`, `Contact Phone.phone_nos` candidates, zero-stock company rows, PAT revocation, HRMS fork URL.
