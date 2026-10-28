@@ -16,6 +16,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
     flt(v) { return parseFloat(v) || 0; }
     fmt(v) { return (this.flt(v)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     esc(v) { return frappe.utils.escape_html(v == null ? "" : String(v)); }
+    eff(inv) { return Math.max(this.flt(inv.outstanding_amount) - this.flt(inv.carry_applied), 0); }
 
     build() {
         this.$root = $(this.wrapper.page.main);
@@ -55,6 +56,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
                     <div class="fe-field" style="flex:0 0 190px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="fpe-pay-all" style="width:100%;justify-content:center;"><i class="fa fa-check-circle"></i> Select All Full</button></div>
                     <div class="fe-field" style="flex:0 0 190px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="fpe-deselect-all" style="width:100%;justify-content:center;"><i class="fa fa-times-circle"></i> Deselect All</button></div>
                 </div>
+                <div id="fpe-carry-banner" style="display:none;margin-bottom:10px;padding:8px 10px;background:#fefce8;border:1px solid #fde68a;border-radius:6px;font-size:13px;color:#92400e;"></div>
                 <div id="fpe-pending-wrap" style="overflow-x:auto;">
                     <table class="fsr-table" id="fpe-pending-table">
                         <thead><tr>
@@ -66,6 +68,8 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
                             <th class="fsr-num">Grand Total (Rs)</th>
                             <th class="fsr-num">Outstanding (Rs)</th>
                             <th class="fsr-num">To Pay (Rs)</th>
+                            <th class="fsr-num">TDS (Rs)</th>
+                            <th class="fsr-num">Advance (Rs)</th>
                             <th>Status</th>
                         </tr></thead>
                         <tbody id="fpe-pending-body"></tbody>
@@ -89,6 +93,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
                 <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
                     <div class="fe-field"><label>Selected Invoices</label><span id="fpe-sel-count" style="font-weight:700;">0</span></div>
                     <div class="fe-field"><label>Total To Pay (Rs)</label><span id="fpe-sel-total" style="font-size:16px;font-weight:700;">0.00</span></div>
+                    <div id="fpe-net-row" style="display:none;margin-top:8px;padding:6px 10px;background:#f0f9ff;border-radius:6px;font-size:13px;color:#1e40af;"></div>
                     <div class="fe-field" style="flex:0 0 260px;align-self:flex-end;"><button class="fe-btn fe-btn-success" id="fpe-create" style="width:100%;justify-content:center;"><i class="fa fa-check"></i> Create Payment Entry</button></div>
                 </div>
                 <div class="fsr-empty" id="fpe-allocation-warn" style="display:none;padding:8px 0;text-align:left;color:#92400e;"></div>
@@ -115,6 +120,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         this.$pending_body = this.$root.find("#fpe-pending-body");
         this.$pending_total = this.$root.find("#fpe-pending-total");
         this.$pending_empty = this.$root.find("#fpe-pending-empty");
+        this.$carry_banner = this.$root.find("#fpe-carry-banner");
         this.$status_bar = this.$root.find("#fpe-status-bar");
         this.$sel_count = this.$root.find("#fpe-sel-count");
         this.$sel_total = this.$root.find("#fpe-sel-total");
@@ -282,10 +288,19 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
             args: args,
             callback: function(r) {
                 const data = r.message || {};
-                self.pending = data.invoices || [];
+                self.pending = (data.invoices || []).map(function(inv, i) {
+                    inv._idx = i;
+                    inv.pay_amount = 0;
+                    inv.tds = 0;
+                    inv.advance = 0;
+                    inv.carry_applied = self.flt(inv.carry_applied);
+                    return inv;
+                });
                 self.total_outstanding = self.flt(data.total_outstanding);
                 self.by_party = data.by_party || {};
                 self.party_field = party_type === "Customer" ? "customer" : "supplier";
+                self.advance_balance = self.flt(data.advance_balance);
+                self.carry_applied_total = self.flt(data.carry_applied_total);
                 self.render_pending(group_mode, data.parties || []);
                 self.preview_allocation();
             },
@@ -318,6 +333,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
             const party_cell = group_mode
                 ? `<td class="fpe-member">${self.esc(inv.party_name || inv[self.party_field] || "")}</td>`
                 : "";
+            const carry_note = self.flt(inv.carry_applied) > 0 ? `<div style="font-size:11px;color:#b45309;">&minus; Rs. ${self.fmt(inv.carry_applied)} carry</div>` : "";
             tr.innerHTML = `
                 <td style="text-align:center;"><input type="checkbox" class="fpe-check" data-idx="${i}" ${i === 0 ? "checked" : ""} /></td>
                 ${party_cell}
@@ -325,19 +341,57 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
                 <td class="fsr-date">${inv.posting_date}</td>
                 <td class="fsr-date">${inv.due_date || ""}</td>
                 <td class="fsr-num">${self.fmt(inv.grand_total)}</td>
-                <td class="fsr-num" style="font-weight:700;color:#dc2626;">${self.fmt(inv.outstanding_amount)}</td>
-                <td class="fsr-num fpe-alloc-amt"></td>
+                <td class="fsr-num" style="font-weight:700;color:#dc2626;">${self.fmt(inv.outstanding_amount)}${carry_note}</td>
+                <td class="fsr-num"><input type="number" class="fe-input fpe-pay-input" data-idx="${i}" min="0" step="0.01" value="0" /></td>
+                <td class="fsr-num"><input type="number" class="fe-input fpe-tds-input" data-idx="${i}" min="0" step="0.01" value="0" /></td>
+                <td class="fsr-num"><input type="number" class="fe-input fpe-adv-input" data-idx="${i}" min="0" step="0.01" value="0" /></td>
                 <td class="fpe-alloc-label"></td>`;
             self.$pending_body[0].appendChild(tr);
         });
 
         this.$pending_body.find(".fpe-check").on("change", () => self.preview_allocation());
 
+        this.$pending_body.off("input").on("input", ".fpe-pay-input", function() {
+            const idx = parseInt($(this).data("idx"), 10);
+            const inv = self.pending[idx];
+            if (!inv) return;
+            const val = self.flt($(this).val());
+            inv.pay_amount = val;
+            inv._manually_selected = val > 0;
+            const $tr = self.$pending_body.find(`tr[data-idx="${idx}"]`);
+            if (!$tr.length) return;
+            const checked = val > 0;
+            if (checked) delete self.deselected[idx];
+            else self.deselected[idx] = true;
+            $tr.find(".fpe-check").prop("checked", checked);
+            $tr.toggleClass("fpe-checked", checked);
+            const $st = $tr.find(".fpe-alloc-label");
+            if (!checked) $st.html("");
+            else if (val >= self.eff(inv) - 0.01) $st.html('<span style="color:#059669;font-weight:700;font-size:11px;"><i class="fa fa-check-circle"></i> Full</span>');
+            else $st.html('<span style="color:#b45309;font-weight:700;font-size:11px;"><i class="fa fa-adjust"></i> Partial</span>');
+            self.preview_allocation();
+        });
+
+        this.$pending_body.off("input.tdsadv").on("input.tdsadv", ".fpe-tds-input, .fpe-adv-input", function() {
+            const idx = parseInt($(this).data("idx"), 10);
+            const inv = self.pending[idx];
+            if (!inv) return;
+            const $tr = self.$pending_body.find(`tr[data-idx="${idx}"]`);
+            if ($tr.length) {
+                inv.tds = self.flt($tr.find(".fpe-tds-input").val());
+                inv.advance = self.flt($tr.find(".fpe-adv-input").val());
+            }
+            self.preview_allocation();
+        });
+
         this.$pending_total.html(`<tr style="background:#f9fafb;border-top:2px solid #e5e7eb;">
             ${group_mode ? "<td></td>" : ""}
             <td colspan="5" style="padding:8px 10px;font-weight:700;color:#374151;">Total Outstanding</td>
             <td class="fsr-num" style="padding:8px 10px;font-weight:800;color:#dc2626;">${self.fmt(this.total_outstanding)}</td>
-            <td colspan="2"></td></tr>`);
+            <td class="fsr-num" id="fpe-total-to-pay" style="padding:8px 10px;font-weight:800;color:#059669;">0.00</td>
+            <td class="fsr-num" id="fpe-total-tds" style="padding:8px 10px;font-weight:700;color:#374151;">0.00</td>
+            <td class="fsr-num" id="fpe-total-adv" style="padding:8px 10px;font-weight:700;color:#374151;">0.00</td>
+            <td></td></tr>`);
 
         // Per-member subtotals, so a group payment shows its split before any
         // Payment Entry exists rather than only in the success message.
@@ -356,6 +410,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
             });
         }
 
+        this.render_carry_banner();
         this.preview_allocation();
     }
 
@@ -378,6 +433,19 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         this.$progress_bar.css("width", "0%");
         this.$progress_pct.text("0%");
         this.$progress_label.text("Paying Rs. 0.00 of Rs. 0.00");
+    }
+
+    render_carry_banner() {
+        const bal = this.flt(this.advance_balance);
+        if (bal > 0) {
+            const applied = this.flt(this.carry_applied_total);
+            this.$carry_banner.show().html(
+                `<i class="fa fa-info-circle"></i> Advance balance <b>Rs. ${this.fmt(bal)}</b>` +
+                (applied > 0 ? ` &middot; <b>Rs. ${this.fmt(applied)}</b> auto-applied to pending invoices (oldest first)` : " &middot; will auto-apply on payment (oldest first)")
+            );
+        } else {
+            this.$carry_banner.hide();
+        }
     }
 
     preview_allocation() {
@@ -428,6 +496,36 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         this.$sel_count.text(selected_count);
         this.$sel_total.text(self.fmt(total_alloc));
 
+        // TDS/Advance totals (count for any row with pay_amount > 0)
+        let tds_total = 0, adv_total = 0;
+        this.pending.forEach(function(inv, i) {
+            if (self.flt(inv.pay_amount) > 0) {
+                tds_total += self.flt(inv.tds);
+                adv_total += self.flt(inv.advance);
+            }
+        });
+        const $tTds = this.$root.find("#fpe-total-tds");
+        if ($tTds.length) $tTds.text(self.fmt(tds_total));
+        const $tAdv = this.$root.find("#fpe-total-adv");
+        if ($tAdv.length) $tAdv.text(self.fmt(adv_total));
+
+        // Net row
+        const selected = this.pending.filter(inv => this.flt(inv.pay_amount) > 0);
+        const $net = this.$root.find("#fpe-net-row");
+        if (selected.length) {
+            const total_pay = selected.reduce((s, inv) => s + self.flt(inv.pay_amount), 0);
+            const net = total_pay + adv_total - tds_total;
+            const party_type = this.$party_type.val();
+            const label = party_type === "Customer" ? "Bank receipt" : "Bank payment";
+            let html = `<b>${label}</b> = Invoices <b>Rs. ${this.fmt(total_pay)}</b>`;
+            if (adv_total > 0) html += ` + Advance <b>Rs. ${this.fmt(adv_total)}</b>`;
+            if (tds_total > 0) html += ` &minus; TDS <b>Rs. ${this.fmt(tds_total)}</b>`;
+            html += ` = <b>Rs. ${this.fmt(net)}</b>`;
+            $net.show().html(html);
+        } else {
+            $net.hide();
+        }
+
         const pct = total_outstanding > 0 ? Math.min(100, (total_alloc / total_outstanding) * 100) : 0;
         this.$progress_bar.css("width", pct + "%");
         this.$progress_pct.text(Math.round(pct) + "%");
@@ -453,7 +551,7 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
             if (!p) return;
             if (!by_party[p]) by_party[p] = { party: p, pay_amount: 0, invoices: [] };
             by_party[p].pay_amount += alloc;
-            by_party[p].invoices.push({ name: inv.name, pay_amount: alloc });
+            by_party[p].invoices.push({ name: inv.name, pay_amount: alloc, tds: self.flt(inv.tds), advance: self.flt(inv.advance) });
         });
         return Object.keys(by_party).map(k => by_party[k]);
     }
@@ -510,44 +608,69 @@ fast_entry_app.PaymentEntry = class PaymentEntry {
         const party_type = this.$party_type.val();
         const party = this.$party.val();
         const amount = this.flt(this.$amount.val());
+        const has_selected = this.pending.some(inv => this.flt(inv.pay_amount) > 0);
         const errors = [];
         if (!company) errors.push("Company is required");
         if (!party) errors.push("Party is required");
-        if (!amount || amount <= 0) errors.push("Amount must be greater than 0");
+        if (!has_selected) errors.push("Select at least one invoice to pay");
+        // TDS guard (mirrors server-side throw)
+        this.pending.forEach(function(inv) {
+            if (self.flt(inv.pay_amount) > 0 && self.flt(inv.tds) > self.eff(inv) + 0.01) {
+                errors.push("TDS for " + inv.name + " exceeds its outstanding (Rs. " + self.fmt(self.eff(inv)) + ")");
+            }
+        });
         if (errors.length) { frappe.msgprint({ title: "Validation Error", indicator: "red", message: errors.join("<br>") }); return; }
 
         this.$status_bar.html('<span class="fe-status-saving"><i class="fa fa-spinner fa-spin"></i> Creating Payment Entry...</span>');
         this.$root.find("#fpe-create").prop("disabled", true);
+
+        const is_customer = party_type === "Customer";
+        const method = is_customer
+            ? "fast_entry_app.api.payment.create_bulk_customer_payment"
+            : "fast_entry_app.api.payment.create_bulk_supplier_payment";
+        const items = this.pending.filter(inv => this.flt(inv.pay_amount) > 0).map(function(inv) {
+            return { name: inv.name, [self.party_field]: inv[self.party_field] || inv.party, pay_amount: self.flt(inv.pay_amount), tds: self.flt(inv.tds), advance: self.flt(inv.advance) };
+        });
+
         frappe.call({
-            method: "fast_entry_app.api.payment.create_bulk_payment",
+            method: method,
             args: {
-                company: company,
-                party_type: party_type,
-                party: party,
-                amount: amount,
-                mode_of_payment: this.$mode.val() || "",
-                posting_date: this.$posting_date.val() || "",
-                reference_no: this.$ref_no.val() || "",
-                reference_date: this.$ref_date.val() || "",
+                data: {
+                    company: company,
+                    party_type: party_type,
+                    party: party,
+                    mode_of_payment: this.$mode.val() || "",
+                    posting_date: this.$posting_date.val() || "",
+                    reference_no: this.$ref_no.val() || "",
+                    reference_date: this.$ref_date.val() || "",
+                    items: items,
+                },
             },
             callback: function(r) {
                 self.$root.find("#fpe-create").prop("disabled", false);
-                if (r.message && r.message.name) {
+                if (r.message && r.message.count) {
                     const m = r.message;
-                    const fully_paid = (m.allocation || []).filter(a => a.fully_paid).length;
-                    const partial = (m.allocation || []).filter(a => !a.fully_paid).length;
+                    frappe.show_alert({ message: __("Payment Entry {0} created", [m.payments ? m.payments[0].payment_entry : m.name]), indicator: "green" });
+                    self.$status_bar.html(`<span class="fe-status-ok"><i class="fa fa-check"></i> Payment entries created | Rs. ${self.fmt(m.total)}</span>`);
+                    self.load_pending();
+                    self.$amount.val("");
+                    self.preview_allocation();
+                } else if (r.message && r.message.name) {
+                    const m = r.message;
                     frappe.show_alert({ message: __("Payment Entry {0} created", [m.name]), indicator: "green" });
-                    self.$status_bar.html(`<span class="fe-status-ok"><i class="fa fa-check"></i> <a href="/app/payment-entry/${m.name}" target="_blank">${m.name}</a> | ${fully_paid} fully paid, ${partial} partial</span>`);
+                    self.$status_bar.html(`<span class="fe-status-ok"><i class="fa fa-check"></i> <a href="/app/payment-entry/${m.name}" target="_blank">${m.name}</a> | Rs. ${self.fmt(m.grand_total || m.total)}</span>`);
                     self.load_pending();
                     self.$amount.val("");
                     self.preview_allocation();
                 } else {
-                    self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Payment Entry not created</span>');
+                    self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Payment entries not created</span>');
                 }
             },
-            error: function() {
+            error: function(err) {
                 self.$root.find("#fpe-create").prop("disabled", false);
-                self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> Failed to create payment entry</span>');
+                let msg = "Failed to create payment entries";
+                if (err && err.message && err.message.exc_type) { try { msg = JSON.parse(err.message._server_messages || "[]").join(" ") || msg; } catch (e) {} }
+                self.$status_bar.html('<span class="fe-status-error"><i class="fa fa-times"></i> ' + msg + '</span>');
             }
         });
     }
