@@ -87,22 +87,6 @@
     "icon": "file-plus"
    },
    {
-    "child": 1,
-    "collapsible": 1,
-    "icon": "credit-card",
-    "indent": 0,
-    "keep_closed": 0,
-    "label": "Payment Entry",
-    "link_to": "fast-payment-entry",
-    "link_type": "Page",
-    "show_arrow": 0,
-    "type": "Link",
-    "filters": null,
-    "route_options": null,
-    "navigate_to_tab": null,
-    "url": null
-   },
-   {
     "child": 0,
     "collapsible": 1,
     "filters": null,
@@ -116,6 +100,22 @@
     "route_options": null,
     "show_arrow": 0,
     "type": "Section Break",
+    "url": null
+   },
+   {
+    "child": 1,
+    "collapsible": 1,
+    "icon": "credit-card",
+    "indent": 0,
+    "keep_closed": 0,
+    "label": "Payment Entry",
+    "link_to": "fast-payment-entry",
+    "link_type": "Page",
+    "show_arrow": 0,
+    "type": "Link",
+    "filters": null,
+    "route_options": null,
+    "navigate_to_tab": null,
     "url": null
    },
    {
