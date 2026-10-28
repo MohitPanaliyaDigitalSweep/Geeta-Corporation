@@ -254,7 +254,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
 
     add_empty_row() {
         const idx = this.items.length + 1;
-        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, rate:0, amount:0, uom:"", nos_factor:1, litre_factor:0, stock_uom:"", gst_rate:0 };
+        const row = { idx, item_code:"", item_name:"", box:0, pcs:0, ltr:0, qty:0, rate:0, amount:0, uom:"", nos_factor:1, litre_factor:0, stock_uom:"", gst_rate:0, batch_no:"", has_batch_no:false };
         this.items.push(row);
         this.render_row(row);
     }
@@ -271,6 +271,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                     <input type="text" class="fe-grid-input fe-item-input" data-field="item_code" value="${row.item_name||row.item_code}" placeholder="Search..." autocomplete="off" />
                 </div>
                 <div class="fe-item-code">${row.item_code||""}</div>
+                <input type="text" class="fe-grid-input fe-batch-input" data-field="batch_no" value="${row.batch_no||""}" placeholder="Batch (optional)" autocomplete="off" style="display:none;margin-top:2px;font-size:11px;" />
             </td>
             <td class="fe-col-box"><input type="number" class="fe-grid-input fe-num-input" data-field="box" value="${row.box||""}" min="0" step="1" /></td>
             <td class="fe-col-pcs"><input type="number" class="fe-grid-input fe-num-input" data-field="pcs" value="${row.pcs||""}" min="0" /></td>
@@ -341,6 +342,50 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
         $(tr).find("[data-field='pcs']").on("input", function() { row.pcs = self.flt($(this).val()); self.calculate_row(row, tr, "pcs"); });
         $(tr).find("[data-field='ltr']").on("input", function() { row.ltr = self.flt($(this).val()); self.calculate_row(row, tr, "ltr"); });
         $(tr).find("[data-field='rate']").on("input", function() { row.rate = self.flt($(this).val()); self.calculate_row(row, tr, "rate"); });
+        const $batch_input = $(tr).find("[data-field='batch_no']");
+        $batch_input.on("input", function() {
+            const val = $(this).val();
+            row.batch_no = val;
+            if (!row.has_batch_no) { self.hide_global_dropdown(); return; }
+            const wh = row.warehouse || self.$warehouse.val() || "";
+            self.search_batches(row.item_code, wh, val, function(results) {
+                let html = "";
+                results.forEach(function(b) {
+                    const exp = b.expiry_date ? ` <span class="fe-dd-secondary">exp ${b.expiry_date}</span>` : "";
+                    html += `<div class="fe-dropdown-item" data-value="${b.name}"><span class="fe-dd-primary">${b.name}</span>${exp}</div>`;
+                });
+                if (html) {
+                    self.show_global_dropdown($batch_input, html, function($el) {
+                        $batch_input.val($el.data("value"));
+                        row.batch_no = $el.data("value");
+                        self.hide_global_dropdown();
+                    });
+                } else {
+                    self.hide_global_dropdown();
+                }
+            });
+        });
+        $batch_input.on("focus", function() { $(this).trigger("input"); });
+        $batch_input.on("blur", function() { row.batch_no = $(this).val(); });
+        $batch_input.on("keydown", function(e) {
+            const $items = self.$gd.find(".fe-dropdown-item");
+            const $active = $items.filter(".active");
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                if (!$active.length) $items.first().addClass("active");
+                else { $active.removeClass("active").next().addClass("active"); }
+                if (self.$gd.is(":visible")) self.$gd.scrollTop($items.filter(".active").position()?.top + self.$gd.scrollTop() - 40);
+            } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                if (!$active.length) $items.last().addClass("active");
+                else { $active.removeClass("active").prev().addClass("active"); }
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                if ($active.length) $active.trigger("mousedown");
+            } else if (e.key === "Escape") {
+                self.hide_global_dropdown();
+            }
+        });
         $(tr).find(".fe-delete-row").on("click", function() { self.delete_row(row, tr); });
     }
 
@@ -395,10 +440,12 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                     const uoms = (search_uoms && search_uoms.length) ? search_uoms : (d.uoms || []);
                     row.nos_factor = 1;
                     row.litre_factor = 1;
+                    let has_box = false;
                     if (uoms.length) {
                         const box_uom = uoms.find(u => u.uom === "Box");
                         const nos_uom = uoms.find(u => u.uom === "Nos");
                         const litre_uom = uoms.find(u => u.uom === "Litre" || u.uom === "Kg");
+                        has_box = !!box_uom;
                         // Option B (piece-based stock UOM): pieces-per-box now lives on
                         // the Box row, because Nos is the stock UOM (cf 1). Legacy
                         // box-based masters still keep it on the Nos row.
@@ -406,7 +453,19 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                         if (pack_row) row.nos_factor = pack_row.conversion_factor || 1;
                         if (litre_uom) row.litre_factor = litre_uom.conversion_factor || 0;
                     }
+                    if (!has_box && d.stock_uom === "Nos" && row.nos_factor === 1) {
+                        has_box = true;
+                    }
+                    row.box = has_box ? 1 : 0;
+                    row.pcs = has_box ? self.flt(row.box * row.nos_factor) : 1;
                     row.ltr = row.litre_factor;
+                    row.has_batch_no = !!d.has_batch_no;
+                    row.batch_no = "";
+                    if (row.has_batch_no) {
+                        $(tr).find(".fe-batch-input").show();
+                    } else {
+                        $(tr).find(".fe-batch-input").hide().val("");
+                    }
                     if (!row.rate && d.rate) { row.rate = d.rate; $(tr).find("[data-field='rate']").val(row.rate); }
                     $(tr).find(".fe-item-input").val(row.item_name).attr("data-item-code", row.item_code);
                     $(tr).find(".fe-item-code").text(row.item_code);
@@ -420,6 +479,14 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
         frappe.call({
             method: "fast_entry_app.api.item.search_items",
             args: { search: query, company: this.$company.val() || "", limit: 15 },
+            callback: function(r) { callback(r.message || []); },
+        });
+    }
+
+    search_batches(item_code, warehouse, query, callback) {
+        frappe.call({
+            method: "fast_entry_app.api.item.search_batches",
+            args: { item_code: item_code, warehouse: warehouse || "", search: query || "", limit: 20 },
             callback: function(r) { callback(r.message || []); },
         });
     }
@@ -626,6 +693,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                 conversion_factor: r.conversion_factor || 1,
                 total_ltr: r.qty || 0,
                 gst_rate: r.gst_rate,
+                batch_no: r.batch_no || "",
             })),
         };
     }
