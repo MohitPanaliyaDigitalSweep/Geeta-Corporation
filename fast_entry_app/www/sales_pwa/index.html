@@ -620,9 +620,10 @@
 
                 var batchInp = el.querySelector(".batch-inp");
                 if (batchInp) {
+                    bindNavKeys(batchInp);
                     batchInp.addEventListener("input", function () {
                         row.batch_no = this.value.trim();
-                        if (!row.has_batch_no || this.value.trim().length < 1) { hideDropdown(); return; }
+                        if (!row.has_batch_no) { hideDropdown(); return; }
                         call("fast_entry_app.api.item.search_batches", { item_code: row.item_code, warehouse: row.warehouse || $("#f-warehouse").dataset.warehouse || "", search: this.value.trim(), limit: 20 }, function (list) {
                             if (batchInp.value.trim().length < 1) return;
                             var opts = (list || []).map(function (b) {
@@ -635,7 +636,7 @@
                             });
                         });
                     });
-                    batchInp.addEventListener("focus", function () { if (this.value.trim().length >= 1) this.dispatchEvent(new Event("input")); });
+                    batchInp.addEventListener("focus", function () { this.dispatchEvent(new Event("input")); });
                 }
             }
 

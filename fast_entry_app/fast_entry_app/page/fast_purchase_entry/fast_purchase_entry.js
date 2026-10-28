@@ -352,10 +352,11 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
         $(tr).find("[data-field='pcs']").on("input", function() { row.pcs = self.flt($(this).val()); self.calculate_row(row, tr, "pcs"); });
         $(tr).find("[data-field='ltr']").on("input", function() { row.ltr = self.flt($(this).val()); self.calculate_row(row, tr, "ltr"); });
         $(tr).find("[data-field='rate']").on("input", function() { row.rate = self.flt($(this).val()); self.calculate_row(row, tr, "rate"); });
-        $(tr).find("[data-field='batch_no']").on("input", function() {
+        const $batch_input = $(tr).find("[data-field='batch_no']");
+        $batch_input.on("input", function() {
             const val = $(this).val();
             row.batch_no = val;
-            if (!row.has_batch_no || val.length < 1) { self.hide_global_dropdown(); return; }
+            if (!row.has_batch_no) { self.hide_global_dropdown(); return; }
             const wh = row.warehouse || self.$warehouse.val() || "";
             self.search_batches(row.item_code, wh, val, function(results) {
                 let html = "";
@@ -364,8 +365,8 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                     html += `<div class="fe-dropdown-item" data-value="${b.name}"><span class="fe-dd-primary">${b.name}</span>${exp}</div>`;
                 });
                 if (html) {
-                    self.show_global_dropdown($(tr).find("[data-field='batch_no']"), html, function($el) {
-                        $(tr).find("[data-field='batch_no']").val($el.data("value"));
+                    self.show_global_dropdown($batch_input, html, function($el) {
+                        $batch_input.val($el.data("value"));
                         row.batch_no = $el.data("value");
                         self.hide_global_dropdown();
                     });
@@ -374,7 +375,27 @@ fast_entry_app.PurchaseEntry = class PurchaseEntry {
                 }
             });
         });
-        $(tr).find("[data-field='batch_no']").on("focus", function() { if ($(this).val().length >= 1) $(this).trigger("input"); });
+        $batch_input.on("focus", function() { $(this).trigger("input"); });
+        $batch_input.on("blur", function() { row.batch_no = $(this).val(); });
+        $batch_input.on("keydown", function(e) {
+            const $items = self.$gd.find(".fe-dropdown-item");
+            const $active = $items.filter(".active");
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                if (!$active.length) $items.first().addClass("active");
+                else { $active.removeClass("active").next().addClass("active"); }
+                if (self.$gd.is(":visible")) self.$gd.scrollTop($items.filter(".active").position()?.top + self.$gd.scrollTop() - 40);
+            } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                if (!$active.length) $items.last().addClass("active");
+                else { $active.removeClass("active").prev().addClass("active"); }
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                if ($active.length) $active.trigger("mousedown");
+            } else if (e.key === "Escape") {
+                self.hide_global_dropdown();
+            }
+        });
         $(tr).find(".fe-delete-row").on("click", function() { self.delete_row(row, tr); });
     }
 
