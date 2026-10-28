@@ -133,37 +133,39 @@ def create_quotation(data):
         })
         freight_row_idx = 1
 
+    apply_gst = 1 if data.get("apply_gst", 1) else 0
     tax_override = flt(data.get("tax_override")) or 0
-    if tax_override > 0:
-        _apply_manual_sales_taxes(qt, company, tax_override, gst_type, company_doc, freight_row_idx)
-    else:
-        tax_template = _get_sales_tax_template(company, gst_type)
-        if tax_template:
-            qt.taxes_and_charges = tax_template
-            tmpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
-            if not freight_row_idx:
-                qt.taxes = []
-            for row in tmpl.taxes:
-                if not row.account_head:
-                    continue
-                if "reverse" in (row.description or "").lower():
-                    continue
-                charge_type = row.charge_type
-                row_id = row.row_id
-                if freight_row_idx and charge_type == "On Net Total":
-                    charge_type = "On Previous Row Total"
-                    row_id = freight_row_idx
-                elif row_id:
-                    # Freight row prepended above shifts template row indexes.
-                    row_id = flt(row_id) + freight_row_idx
-                qt.append("taxes", {
-                    "charge_type": charge_type,
-                    "row_id": row_id,
-                    "account_head": row.account_head,
-                    "description": row.description,
-                    "rate": row.rate,
-                    "cost_center": row.cost_center or company_doc.cost_center or "",
-                })
+    if apply_gst:
+        if tax_override > 0:
+            _apply_manual_sales_taxes(qt, company, tax_override, gst_type, company_doc, freight_row_idx)
+        else:
+            tax_template = _get_sales_tax_template(company, gst_type)
+            if tax_template:
+                qt.taxes_and_charges = tax_template
+                tmpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
+                if not freight_row_idx:
+                    qt.taxes = []
+                for row in tmpl.taxes:
+                    if not row.account_head:
+                        continue
+                    if "reverse" in (row.description or "").lower():
+                        continue
+                    charge_type = row.charge_type
+                    row_id = row.row_id
+                    if freight_row_idx and charge_type == "On Net Total":
+                        charge_type = "On Previous Row Total"
+                        row_id = freight_row_idx
+                    elif row_id:
+                        # Freight row prepended above shifts template row indexes.
+                        row_id = flt(row_id) + freight_row_idx
+                    qt.append("taxes", {
+                        "charge_type": charge_type,
+                        "row_id": row_id,
+                        "account_head": row.account_head,
+                        "description": row.description,
+                        "rate": row.rate,
+                        "cost_center": row.cost_center or company_doc.cost_center or "",
+                    })
 
     qt.flags.ignore_permissions = True
     qt.flags.ignore_links = True
@@ -171,6 +173,14 @@ def create_quotation(data):
     qt.run_method("calculate_taxes_and_totals")
 
     qt.insert(ignore_permissions=True)
+
+    # When GST is disabled, India Compliance may have auto-added tax rows
+    # during validate(). Strip them (keeping the freight actual row, if any).
+    if not apply_gst:
+        freight_rows = [t for t in (qt.taxes or []) if (t.description or "") == "Freight / Transport"]
+        qt.taxes = freight_rows
+        qt.taxes_and_charges = ""
+        qt.save(ignore_permissions=True)
 
     return {
         "name": qt.name,

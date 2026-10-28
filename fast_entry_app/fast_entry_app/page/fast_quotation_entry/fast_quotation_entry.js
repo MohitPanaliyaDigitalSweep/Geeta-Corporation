@@ -103,6 +103,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
                             <option value="28">Override 28%</option>
                         </select>
                     </div>
+                    <div class="fe-field"><label class="fe-checkbox-label"><input type="checkbox" class="fe-input" id="fe-apply-gst" checked /> Apply GST</label></div>
                 </div>
             </div>
             <div class="fe-grid-section">
@@ -221,6 +222,8 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
         this.$discount_on.on("change", () => this.update_totals());
         this.$tax_template.on("change", () => this.update_totals());
         this.$gst_type.on("change", () => this.update_totals());
+        this.$apply_gst = this.$root.find("#fe-apply-gst");
+        this.$apply_gst.on("change", () => this.update_totals());
 
         this.bind_customer_autocomplete();
     }
@@ -534,10 +537,12 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
 
         const tax_override = parseFloat(this.$tax_template.val()) || 0;
         const gst_type = this.$gst_type.val();
+        const apply_gst = (this.$apply_gst && this.$apply_gst.prop("checked")) ? 1 : 0;
         let total_gst_rate = tax_override;
         if (!total_gst_rate) {
             this.items.forEach(row => { if (row.gst_rate > 0) total_gst_rate = row.gst_rate; });
         }
+        if (!apply_gst) total_gst_rate = 0;
 
         // ERPNext-exact totals, mode-aware (Scenario A / Scenario B):
         //   Net Total   -> discount reduces the taxable value first
@@ -608,6 +613,7 @@ fast_entry_app.QuotationEntry = class QuotationEntry {
             valid_till: this.$valid_till.val(),
             gst_type: this.$gst_type.val(),
             tax_override: parseFloat(this.$tax_template.val()) || 0,
+            apply_gst: this.$apply_gst.prop("checked") ? 1 : 0,
             discount: this.flt(this.$discount.val()),
             apply_discount_on: (this.$discount_on && this.$discount_on.val()) || "Net Total",
             discount_pct: this.flt(this.$discount_pct.val()),
