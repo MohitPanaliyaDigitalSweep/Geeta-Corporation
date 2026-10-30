@@ -55,9 +55,24 @@ def create_field_visit(data):
     doc.geolocation = data.get("geolocation")
     doc.latitude = data.get("latitude")
     doc.longitude = data.get("longitude")
-    doc.photo = data.get("photo")
+    doc.photo = data.get("photo")  # primary photo (backward compat)
     doc.remarks = data.get("remarks")
     doc.status = data.get("status") or "Draft"
+
+    # Handle multiple photos
+    photos = data.get("photos") or []
+    if isinstance(photos, str):
+        import json
+        try:
+            photos = json.loads(photos)
+        except Exception:
+            photos = []
+    for p in photos:
+        if p:
+            doc.append("photos", {"photo": p})
+    # If no photos list but single photo provided, add it
+    if not photos and data.get("photo"):
+        doc.append("photos", {"photo": data.get("photo")})
 
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -98,6 +113,17 @@ def get_field_visits(employee=None, company=None, from_date=None, to_date=None, 
         order_by="visit_date desc, visit_time desc",
         limit_page_length=int(limit),
     )
+    # Attach photos from child table
+    for v in visits:
+        v["photos"] = frappe.get_all(
+            "Field Visit Photo",
+            filters={"parent": v["name"]},
+            fields=["photo", "caption"],
+            order_by="idx asc",
+        )
+        # Fall back to single photo field if no child rows
+        if not v["photos"] and v.get("photo"):
+            v["photos"] = [{"photo": v["photo"], "caption": ""}]
     return visits
 
 

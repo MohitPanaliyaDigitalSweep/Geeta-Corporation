@@ -25,6 +25,7 @@
   "latitude",
   "longitude",
   "section_break_proof",
+  "photos",
   "photo",
   "remarks"
  ],
@@ -139,9 +140,15 @@
    "label": "Proof & Remarks"
   },
   {
+   "fieldname": "photos",
+   "fieldtype": "Table",
+   "label": "Photos",
+   "options": "Field Visit Photo"
+  },
+  {
    "fieldname": "photo",
    "fieldtype": "Attach Image",
-   "label": "Photo"
+   "label": "Photo (Primary)"
   },
   {
    "fieldname": "remarks",

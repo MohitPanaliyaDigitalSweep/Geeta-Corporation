@@ -313,6 +313,7 @@ fast_entry_app.FieldVisit = class FieldVisit {
                             is_private: 0,
                             content: ev.target.result.split(",")[1],
                             decode: 1,
+                            ignore_duplicate_entry_error: 1,
                         }),
                     },
                     callback: function(r) {
