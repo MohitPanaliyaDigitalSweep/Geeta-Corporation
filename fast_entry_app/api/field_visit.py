@@ -79,7 +79,7 @@ def get_live_locations(company=None):
             as_dict=True,
         )
         # Fallback to Employee Checkin
-        if not visit or not visit.latitude:
+        if not visit or not visit.get("latitude"):
             checkin = frappe.db.get_value(
                 "Employee Checkin",
                 {"employee": emp.name},
@@ -87,12 +87,12 @@ def get_live_locations(company=None):
                 order_by="time desc",
                 as_dict=True,
             )
-            if checkin and checkin.latitude:
+            if checkin and checkin.get("latitude"):
                 visit = {
-                    "latitude": checkin.latitude,
-                    "longitude": checkin.longitude,
-                    "visit_date": checkin.time.date() if checkin.time else None,
-                    "visit_time": checkin.time.time() if checkin.time else None,
+                    "latitude": checkin.get("latitude"),
+                    "longitude": checkin.get("longitude"),
+                    "visit_date": checkin.get("time").date() if checkin.get("time") else None,
+                    "visit_time": checkin.get("time").time() if checkin.get("time") else None,
                     "party_name": None,
                     "remarks": None,
                 }
@@ -102,12 +102,12 @@ def get_live_locations(company=None):
                 "employee": emp.name,
                 "employee_name": emp.employee_name,
                 "company": emp.company,
-                "latitude": visit.latitude,
-                "longitude": visit.longitude,
-                "visit_date": str(visit.visit_date) if visit.visit_date else None,
-                "visit_time": str(visit.visit_time) if visit.visit_time else None,
-                "party_name": visit.party_name,
-                "remarks": visit.remarks,
+                "latitude": visit.get("latitude"),
+                "longitude": visit.get("longitude"),
+                "visit_date": str(visit.get("visit_date")) if visit.get("visit_date") else None,
+                "visit_time": str(visit.get("visit_time")) if visit.get("visit_time") else None,
+                "party_name": visit.get("party_name"),
+                "remarks": visit.get("remarks"),
             })
 
     return locations
