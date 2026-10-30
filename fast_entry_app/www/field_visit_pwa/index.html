@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Field Visit - Log</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #F8F8F8; color: #171717; }
+.app-bar { background: #007BE0; color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+.app-bar h1 { font-size: 18px; font-weight: 600; }
+.container { padding: 12px; max-width: 520px; margin: 0 auto; }
+.card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.card-title { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+.field input, .field select, .field textarea { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+.field textarea { min-height: 80px; resize: vertical; }
+.btn { padding: 10px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; width: 100%; }
+.btn-primary { background: #007BE0; color: #fff; }
+.btn-secondary { background: #f3f4f6; color: #374151; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.status { padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; display: none; }
+.status.ok { background: #dcfce7; color: #166534; display: block; }
+.status.err { background: #fee2e2; color: #991b1b; display: block; }
+.status.info { background: #dbeafe; color: #1e40af; display: block; }
+.map-preview { height: 200px; border: 1px solid #e5e7eb; border-radius: 6px; margin-top: 8px; display: none; }
+.photo-preview { max-width: 100%; max-height: 200px; border-radius: 6px; margin-top: 8px; display: none; }
+.recent-item { padding: 8px; border-bottom: 1px solid #f3f4f6; display: flex; gap: 8px; align-items: flex-start; }
+.recent-item img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="app-bar">
+    <h1>Field Visit</h1>
+</div>
+<div class="container">
+    <div id="status" class="status"></div>
+
+    <div class="card">
+        <div class="card-title">Visit Details</div>
+        <div class="field">
+            <label>Employee *</label>
+            <select id="f-employee"></select>
+        </div>
+        <div class="field">
+            <label>Company</label>
+            <select id="f-company"></select>
+        </div>
+        <div class="field">
+            <label>Party Type</label>
+            <select id="f-party-type">
+                <option value="Customer">Customer</option>
+                <option value="Supplier">Supplier</option>
+                <option value="Lead">Lead</option>
+                <option value="None">None</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Party</label>
+            <input type="text" id="f-party" placeholder="Search party...">
+        </div>
+        <div class="field">
+            <label>Visit Date</label>
+            <input type="date" id="f-visit-date">
+        </div>
+        <div class="field">
+            <label>Visit Type</label>
+            <select id="f-visit-type">
+                <option value="Customer Visit">Customer Visit</option>
+                <option value="Site Survey">Site Survey</option>
+                <option value="Delivery Follow-up">Delivery Follow-up</option>
+                <option value="Collection">Collection</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Location</div>
+        <button class="btn btn-primary" id="btn-location" style="margin-bottom:8px;">Capture Location</button>
+        <div id="loc-status" style="font-size:12px;color:#6b7280;">No location captured.</div>
+        <div id="loc-map" class="map-preview"></div>
+        <input type="hidden" id="f-lat">
+        <input type="hidden" id="f-lng">
+        <input type="hidden" id="f-geo">
+    </div>
+
+    <div class="card">
+        <div class="card-title">Photo & Remarks</div>
+        <div class="field">
+            <label>Photo</label>
+            <input type="file" id="f-photo" accept="image/*" capture="environment">
+            <img id="f-photo-preview" class="photo-preview">
+        </div>
+        <div class="field">
+            <label>Remarks</label>
+            <textarea id="f-remarks" placeholder="Notes about this visit..."></textarea>
+        </div>
+        <button class="btn btn-primary" id="btn-save">Save Visit</button>
+    </div>
+
+    <div class="card">
+        <div class="card-title">Recent Visits</div>
+        <div id="recent-list">
+            <div style="text-align:center;padding:20px;color:#9ca3af;">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+var BASE = window.location.origin;
+var CSRF = "{{ csrf_token | safe }}";
+
+function call(method, args, cb) {
+    fetch(BASE + "/api/method/" + method, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Frappe-CSRF-Token": CSRF },
+        body: JSON.stringify(args || {}),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.exc) { cb(null, d); return; }
+        cb(d.message, null);
+    }).catch(function (e) { cb(null, { exc: e.message }); });
+}
+
+function flt(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function fmt(v) { return (flt(v)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function esc(v) { return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function showStatus(msg, type) {
+    var el = document.getElementById("status");
+    el.textContent = msg;
+    el.className = "status " + (type || "info");
+    el.style.display = "block";
+}
+
+function loadCompanies() {
+    call("frappe.client.get_list", { doctype: "Company", filters: {}, fields: ["name"], limit_page_length: 100 }, function (list) {
+        var sel = document.getElementById("f-company");
+        sel.innerHTML = '<option value="">Select Company</option>';
+        (list || []).forEach(function (c) {
+            var o = document.createElement("option");
+            o.value = c.name; o.textContent = c.name;
+            sel.appendChild(o);
+        });
+        if (list && list.length === 1) sel.value = list[0].name;
+    });
+}
+
+function loadEmployees() {
+    call("fast_entry_app.api.field_visit.get_employees", { company: document.getElementById("f-company").value || "" }, function (list) {
+        var sel = document.getElementById("f-employee");
+        sel.innerHTML = '<option value="">Select Employee</option>';
+        (list || []).forEach(function (e) {
+            var o = document.createElement("option");
+            o.value = e.name; o.textContent = e.employee_name || e.name;
+            sel.appendChild(o);
+        });
+    });
+}
+
+function captureLocation() {
+    var status = document.getElementById("loc-status");
+    if (!navigator.geolocation) {
+        status.textContent = "Geolocation not supported.";
+        status.style.color = "#dc2626";
+        return;
+    }
+    status.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Capturing location...';
+    status.style.color = "#374151";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+        var lat = pos.coords.latitude;
+        var lng = pos.coords.longitude;
+        var acc = pos.coords.accuracy;
+        document.getElementById("f-lat").value = lat;
+        document.getElementById("f-lng").value = lng;
+        document.getElementById("f-geo").value = JSON.stringify({ type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties: { accuracy: acc } });
+        status.innerHTML = '<span style="color:#059669;"><i class="fa fa-check-circle"></i> Location captured: ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + ' (±' + Math.round(acc) + 'm)</span>';
+        // Show map preview
+        var mapEl = document.getElementById("loc-map");
+        mapEl.style.display = "block";
+        if (typeof L === "undefined") {
+            // Load leaflet
+            var s = document.createElement("script");
+            s.src = "/assets/frappe/js/lib/leaflet/leaflet.bundle.js";
+            s.onload = function () {
+                var c = document.createElement("link");
+                c.rel = "stylesheet"; c.href = "/assets/frappe/css/lib/leaflet/leaflet.bundle.css";
+                document.head.appendChild(c);
+                renderMap(lat, lng);
+            };
+            document.head.appendChild(s);
+        } else {
+            renderMap(lat, lng);
+        }
+    }, function (err) {
+        status.textContent = "Location error: " + err.message;
+        status.style.color = "#dc2626";
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+
+function renderMap(lat, lng) {
+    var mapEl = document.getElementById("loc-map");
+    if (window._fvMap) window._fvMap.remove();
+    window._fvMap = L.map(mapEl).setView([lat, lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors", maxZoom: 19,
+    }).addTo(window._fvMap);
+    L.marker([lat, lng]).addTo(window._fvMap).bindPopup("Visit location").openPopup();
+}
+
+function previewPhoto() {
+    var file = document.getElementById("f-photo").files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+        var img = document.getElementById("f-photo-preview");
+        img.src = ev.target.result;
+        img.style.display = "block";
+    };
+    reader.readAsDataURL(file);
+}
+
+function saveVisit(isDraft) {
+    var employee = document.getElementById("f-employee").value;
+    if (!employee) { showStatus("Select an employee.", "err"); return; }
+    var lat = document.getElementById("f-lat").value;
+    var lng = document.getElementById("f-lng").value;
+    if (!lat || !lng) { showStatus("Capture location first.", "err"); return; }
+
+    showStatus("Saving...", "info");
+
+    var photoFile = document.getElementById("f-photo").files[0];
+    var doSave = function (photoUrl) {
+        var dateVal = document.getElementById("f-visit-date").value || new Date().toISOString().slice(0, 10);
+        var timeVal = new Date().toTimeString().slice(0, 5);
+        var data = {
+            employee: employee,
+            company: document.getElementById("f-company").value || "",
+            visit_date: dateVal,
+            visit_time: timeVal,
+            party_type: document.getElementById("f-party-type").value,
+            party: document.getElementById("f-party").dataset.party || "",
+            party_name: document.getElementById("f-party").value || "",
+            visit_type: document.getElementById("f-visit-type").value,
+            geolocation: document.getElementById("f-geo").value || "",
+            latitude: parseFloat(lat),
+            longitude: parseFloat(lng),
+            photo: photoUrl || "",
+            remarks: document.getElementById("f-remarks").value || "",
+            status: isDraft ? "Draft" : "Submitted",
+        };
+        call("fast_entry_app.api.field_visit.create_field_visit", { data: JSON.stringify(data) }, function (msg, err) {
+            if (err) { showStatus("Failed to save visit.", "err"); return; }
+            if (msg && msg.name) {
+                showStatus("Visit " + msg.name + " saved!", "ok");
+                loadRecentVisits();
+                document.getElementById("f-remarks").value = "";
+                document.getElementById("f-photo").value = "";
+                document.getElementById("f-photo-preview").style.display = "none";
+            } else {
+                showStatus("Failed to save visit.", "err");
+            }
+        });
+    };
+
+    if (photoFile) {
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+            call("frappe.client.attach_file", {
+                filename: photoFile.name,
+                filedata: ev.target.result.split(",")[1],
+                doctype: "Field Visit",
+                is_private: 0,
+            }, function (r, err) {
+                if (err || !r || !r.file_url) {
+                    showStatus("Photo upload failed.", "err");
+                    return;
+                }
+                doSave(r.file_url);
+            });
+        };
+        reader.readAsDataURL(photoFile);
+    } else {
+        doSave("");
+    }
+}
+
+function loadRecentVisits() {
+    call("fast_entry_app.api.field_visit.get_field_visits", { limit: 10 }, function (list) {
+        var el = document.getElementById("recent-list");
+        if (!list || !list.length) {
+            el.innerHTML = '<div style="text-align:center;padding:20px;color:#9ca3af;">No visits logged yet.</div>';
+            return;
+        }
+        var html = "";
+        list.forEach(function (v) {
+            var photo = v.photo ? '<img src="' + v.photo + '">' : '<div style="width:40px;height:40px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;justify-content:center;"><i class="fa fa-map-marker" style="color:#9ca3af;"></i></div>';
+            html += '<div class="recent-item">' + photo + '<div style="flex:1;"><div style="font-weight:600;font-size:13px;">' + esc(v.employee_name || v.employee) + ' — ' + esc(v.visit_type) + '</div><div style="font-size:11px;color:#6b7280;">' + (v.visit_date || "") + ' ' + (v.visit_time || "") + (v.party_name ? " · " + esc(v.party_name) : "") + '</div>' + (v.remarks ? '<div style="font-size:12px;color:#374151;margin-top:2px;">' + esc(v.remarks) + '</div>' : '') + (v.latitude ? '<div style="font-size:10px;color:#9ca3af;margin-top:2px;"><i class="fa fa-map-marker"></i> ' + v.latitude + ', ' + v.longitude + '</div>' : '') + '</div><span style="font-size:10px;padding:2px 6px;border-radius:4px;background:' + (v.status === 'Submitted' ? '#dcfce7' : '#fef9c3') + ';color:' + (v.status === 'Submitted' ? '#166534' : '#854d0e') + ';">' + v.status + '</span></div>';
+        });
+        el.innerHTML = html;
+    });
+}
+
+document.getElementById("btn-location").addEventListener("click", captureLocation);
+document.getElementById("f-photo").addEventListener("change", previewPhoto);
+document.getElementById("btn-save").addEventListener("click", function () { saveVisit(false); });
+document.getElementById("f-company").addEventListener("change", loadEmployees);
+
+// Set default date
+document.getElementById("f-visit-date").value = new Date().toISOString().slice(0, 10);
+
+loadCompanies();
+loadEmployees();
+loadRecentVisits();
+
+// Register service worker for offline support
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/field_visit_pwa/sw.js").catch(function (e) { console.log("SW registration failed:", e); });
+}
+</script>
+</body>
+</html>
