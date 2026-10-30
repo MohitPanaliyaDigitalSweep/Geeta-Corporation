@@ -4,6 +4,15 @@ from frappe.utils import nowdate, nowtime
 
 
 @frappe.whitelist()
+def get_my_employee():
+    """Get the Employee linked to the current logged-in user."""
+    emp = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    if emp:
+        return frappe.get_value("Employee", emp, ["name", "employee_name", "company"], as_dict=True)
+    return None
+
+
+@frappe.whitelist()
 def get_employees(company=None):
     filters = {"status": "Active"}
     if company:
