@@ -222,6 +222,23 @@ def _purchase_invoice_fields():
 	]
 
 
+def _employee_fields():
+	"""Custom fields on Employee (HRMS) for location tracking consent."""
+	if not frappe.db.table_exists("Employee"):
+		return []
+	return [
+		{
+			"dt": "Employee",
+			"fieldname": "location_tracking_consent",
+			"fieldtype": "Check",
+			"label": "Location Tracking Consent",
+			"default": "1",
+			"description": "Allow this employee's location to be tracked and shown on the Live Map.",
+			"insert_after": "status",
+		},
+	]
+
+
 def get_field_definitions():
 	"""All app-owned custom fields, in creation order."""
 	return (
@@ -229,6 +246,7 @@ def get_field_definitions():
 		+ _party_fields()
 		+ _sales_invoice_fields()
 		+ _purchase_invoice_fields()
+		+ _employee_fields()
 	)
 
 

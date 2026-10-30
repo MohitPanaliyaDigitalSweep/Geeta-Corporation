@@ -38,6 +38,7 @@ fast_entry_app.LiveMap = class LiveMap {
                     <div class="fe-field"><label>Company</label><select class="fe-input" id="lm-company"></select></div>
                     <div class="fe-field"><label>Employee</label><select class="fe-input" id="lm-employee"><option value="">All Employees</option></select></div>
                     <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><button class="fe-btn fe-btn-primary" id="lm-track" style="width:100%;justify-content:center;"><i class="fa fa-location-arrow"></i> Start Tracking</button></div>
+            <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0;"><input type="checkbox" id="lm-consent" checked /> Share Location</label></div>
                     <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="lm-refresh" style="width:100%;justify-content:center;"><i class="fa fa-refresh"></i> Refresh</button></div>
                     <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><span id="lm-count" style="font-size:12px;color:#6b7280;"></span></div>
                 </div>
@@ -61,10 +62,18 @@ fast_entry_app.LiveMap = class LiveMap {
         this.$company = this.$root.find("#lm-company");
         this.$employee = this.$root.find("#lm-employee");
         this.$track = this.$root.find("#lm-track");
+        this.$consent = this.$root.find("#lm-consent");
         this.$root.find("#lm-refresh").on("click", () => this.refresh_locations());
         this.$company.on("change", () => { this.load_employees(); this.refresh_locations(); });
         this.$employee.on("change", () => this.refresh_locations());
         this.$track.on("click", () => this.toggle_tracking());
+        this.$consent.on("change", () => {
+            frappe.call({
+                method: "fast_entry_app.api.location.set_tracking_consent",
+                args: { consented: this.$consent.prop("checked") ? 1 : 0 },
+                callback: function(r) { frappe.show_alert({ message: __("Consent updated"), indicator: "green" }); }
+            });
+        });
         this._updateOfflineStatus();
     }
 
@@ -116,15 +125,36 @@ fast_entry_app.LiveMap = class LiveMap {
         const self = this;
         const company = this.$company.val() || "";
         const employee = this.$employee.val() || "";
+        const fromDate = self.$from ? self.$from.val() : "";
+        const toDate = self.$to ? self.$to.val() : "";
         frappe.call({
-            method: "fast_entry_app.api.field_visit.get_live_locations",
-            args: { company: company },
+            method: "fast_entry_app.api.field_visit.get_field_visits",
+            args: { company: company, employee: employee, from_date: fromDate, to_date: toDate, limit: 500 },
             callback: function(r) {
-                let locations = r.message || [];
-                if (employee) locations = locations.filter(l => l.employee === employee);
-                self.$root.find("#lm-count").text(locations.length + " active");
+                const visits = r.message || [];
+                // Derive latest location per employee
+                const byEmp = {};
+                visits.forEach(function(v) {
+                    if (!v.latitude || !v.longitude) return;
+                    const key = v.employee;
+                    if (!byEmp[key] || new Date(v.visit_date + ' ' + (v.visit_time || '00:00')) > new Date(byEmp[key].visit_date + ' ' + (byEmp[key].visit_time || '00:00'))) {
+                        byEmp[key] = v;
+                    }
+                });
+                const locations = Object.values(byEmp).map(v => ({
+                    employee: v.employee,
+                    employee_name: v.employee_name,
+                    company: v.company || company,
+                    latitude: v.latitude,
+                    longitude: v.longitude,
+                    visit_date: v.visit_date,
+                    visit_time: v.visit_time,
+                    party_name: v.party_name,
+                    remarks: v.remarks,
+                }));
+                self.$root.find("#lm-count").text(locations.length + " active" + (visits.length ? " (" + visits.length + " visits)" : ""));
                 self.update_markers(locations);
-                self.load_recent_visits(company, employee);
+                self.load_recent_visits(company, employee, fromDate, toDate);
             }
         });
     }
@@ -170,11 +200,11 @@ fast_entry_app.LiveMap = class LiveMap {
         self.$root.find("#lm-legend").text(legend);
     }
 
-    load_recent_visits(company, employee) {
+    load_recent_visits(company, employee, fromDate, toDate) {
         const self = this;
         frappe.call({
             method: "fast_entry_app.api.field_visit.get_field_visits",
-            args: { company: company || "", employee: employee || "", limit: 30 },
+            args: { company: company || "", employee: employee || "", from_date: fromDate || "", to_date: toDate || "", limit: 50 },
             callback: function(r) {
                 const visits = r.message || [];
                 self.$root.find("#lm-visit-count").text(visits.length + " visits");
@@ -256,6 +286,10 @@ fast_entry_app.LiveMap = class LiveMap {
         }
         if (!navigator.geolocation) {
             frappe.msgprint({ title: "Not Supported", indicator: "red", message: "Geolocation is not supported by this browser." });
+            return;
+        }
+        if (!this.$consent.prop("checked")) {
+            frappe.msgprint({ title: "Consent Required", indicator: "orange", message: "Please check 'Share Location' to enable tracking." });
             return;
         }
         this._tracking = true;

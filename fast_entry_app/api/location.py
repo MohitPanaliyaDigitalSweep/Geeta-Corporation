@@ -11,6 +11,15 @@ def ping_location(latitude, longitude, employee=None, accuracy=None):
     if not employee:
         frappe.throw(_("No Employee linked to this user"))
 
+    # Check consent (custom field or cache)
+    consent = None
+    if frappe.db.has_column("Employee", "location_tracking_consent"):
+        consent = frappe.db.get_value("Employee", employee, "location_tracking_consent")
+    if consent is None:
+        consent = frappe.cache().get_value(f"location_consent:{employee}")
+    if consent is not None and not consent:
+        frappe.throw(_("Location tracking consent not granted for this employee"))
+
     checkin = frappe.new_doc("Employee Checkin")
     checkin.employee = employee
     checkin.log_type = "IN"
