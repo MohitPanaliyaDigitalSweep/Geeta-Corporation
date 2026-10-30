@@ -117,6 +117,10 @@ fixtures = [
         "filters": [["name", "=", "Geeta Corporation"]],
     },
     {
+        "dt": "Sidebar",
+        "filters": [["name", "=", "Geeta Corporation"]],
+    },
+    {
         "dt": "Print Format",
         "filters": [
             [
