@@ -65,6 +65,18 @@ def create_field_visit(data):
 
 
 @frappe.whitelist()
+def get_today_visit_count(employee=None):
+    """Count of visits logged today by an employee."""
+    if not employee:
+        employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    if not employee:
+        return 0
+    from frappe.utils import nowdate
+    count = frappe.db.count("Field Visit", filters={"employee": employee, "visit_date": nowdate()})
+    return count
+
+
+@frappe.whitelist()
 def get_field_visits(employee=None, company=None, from_date=None, to_date=None, limit=50):
     """Get field visits for a user/company."""
     filters = {}
