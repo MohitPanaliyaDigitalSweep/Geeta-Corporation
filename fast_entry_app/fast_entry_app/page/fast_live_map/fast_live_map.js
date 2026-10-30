@@ -12,7 +12,10 @@ fast_entry_app.LiveMap = class LiveMap {
         this.map = null;
         this.markers = {};
         this.employees = [];
+        this._offlineQueue = this._loadOfflineQueue();
         this.build();
+        // Flush offline queue when back online
+        window.addEventListener("online", () => this._flushOfflineQueue());
     }
 
     build() {
@@ -24,6 +27,8 @@ fast_entry_app.LiveMap = class LiveMap {
         this.init_map();
         this.refresh_locations();
         this._interval = setInterval(() => this.refresh_locations(), 30000);
+        // Try to flush any queued pings on load
+        this._flushOfflineQueue();
     }
 
     get_html() {
@@ -32,11 +37,12 @@ fast_entry_app.LiveMap = class LiveMap {
                 <div class="fe-header-row">
                     <div class="fe-field"><label>Company</label><select class="fe-input" id="lm-company"></select></div>
                     <div class="fe-field"><label>Employee</label><select class="fe-input" id="lm-employee"><option value="">All Employees</option></select></div>
-                    <div class="fe-field"><label>From Date</label><input type="date" class="fe-input" id="lm-from" /></div>
-                    <div class="fe-field"><label>To Date</label><input type="date" class="fe-input" id="lm-to" /></div>
                     <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><button class="fe-btn fe-btn-primary" id="lm-track" style="width:100%;justify-content:center;"><i class="fa fa-location-arrow"></i> Start Tracking</button></div>
-                <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="lm-refresh" style="width:100%;justify-content:center;"><i class="fa fa-refresh"></i> Refresh</button></div>
+                    <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="lm-refresh" style="width:100%;justify-content:center;"><i class="fa fa-refresh"></i> Refresh</button></div>
                     <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><span id="lm-count" style="font-size:12px;color:#6b7280;"></span></div>
+                </div>
+                <div id="lm-offline-status" style="display:none;padding:6px 10px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;margin-top:6px;">
+                    <i class="fa fa-wifi"></i> Offline — location pings queued (<span id="lm-queue-count">0</span>)
                 </div>
             </div>
             <div id="lm-map" style="height:600px;border:1px solid #e5e7eb;border-radius:8px;margin-top:10px;"></div>
@@ -54,15 +60,12 @@ fast_entry_app.LiveMap = class LiveMap {
         const self = this;
         this.$company = this.$root.find("#lm-company");
         this.$employee = this.$root.find("#lm-employee");
-        this.$from = this.$root.find("#lm-from");
-        this.$to = this.$root.find("#lm-to");
         this.$track = this.$root.find("#lm-track");
         this.$root.find("#lm-refresh").on("click", () => this.refresh_locations());
         this.$company.on("change", () => { this.load_employees(); this.refresh_locations(); });
         this.$employee.on("change", () => this.refresh_locations());
-        this.$from.on("change", () => this.refresh_locations());
-        this.$to.on("change", () => this.refresh_locations());
         this.$track.on("click", () => this.toggle_tracking());
+        this._updateOfflineStatus();
     }
 
     load_companies() {
@@ -161,7 +164,6 @@ fast_entry_app.LiveMap = class LiveMap {
         if (bounds.length > 0 && bounds.length <= 50) {
             try { self.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 }); } catch(e) {}
         }
-        // Update legend
         const legend = locations.length
             ? `${locations.length} employee${locations.length === 1 ? "" : "s"} tracked`
             : "No active locations";
@@ -198,10 +200,53 @@ fast_entry_app.LiveMap = class LiveMap {
         });
     }
 
+    // --- Offline queue for location pings ---
+    _loadOfflineQueue() {
+        try { return JSON.parse(localStorage.getItem("lm_offline_queue") || "[]"); } catch(e) { return []; }
+    }
+    _saveOfflineQueue() {
+        try { localStorage.setItem("lm_offline_queue", JSON.stringify(this._offlineQueue)); } catch(e) {}
+        this._updateOfflineStatus();
+    }
+    _updateOfflineStatus() {
+        const $status = this.$root.find("#lm-offline-status");
+        const $count = this.$root.find("#lm-queue-count");
+        if (this._offlineQueue.length > 0) {
+            $status.show();
+            $count.text(this._offlineQueue.length);
+        } else {
+            $status.hide();
+        }
+    }
+    _queuePing(lat, lng, acc) {
+        this._offlineQueue.push({ latitude: lat, longitude: lng, accuracy: acc, ts: Date.now() });
+        // Keep last 100
+        if (this._offlineQueue.length > 100) this._offlineQueue = this._offlineQueue.slice(-100);
+        this._saveOfflineQueue();
+    }
+    _flushOfflineQueue() {
+        const self = this;
+        if (!navigator.onLine || !this._offlineQueue.length) return;
+        const queue = [...this._offlineQueue];
+        this._offlineQueue = [];
+        this._saveOfflineQueue();
+        queue.forEach(function(ping) {
+            frappe.call({
+                method: "fast_entry_app.api.location.ping_location",
+                args: { latitude: ping.latitude, longitude: ping.longitude, accuracy: ping.accuracy },
+                callback: function(r) { /* flushed */ },
+                error: function() {
+                    // Re-queue on failure
+                    self._offlineQueue.push(ping);
+                    self._saveOfflineQueue();
+                }
+            });
+        });
+    }
+
     toggle_tracking() {
         const self = this;
         if (this._tracking) {
-            // Stop tracking
             if (this._watchId) navigator.geolocation.clearWatch(this._watchId);
             this._watchId = null;
             this._tracking = false;
@@ -222,6 +267,10 @@ fast_entry_app.LiveMap = class LiveMap {
                 const lat = pos.coords.latitude;
                 const lng = pos.coords.longitude;
                 const acc = pos.coords.accuracy;
+                if (!navigator.onLine) {
+                    self._queuePing(lat, lng, acc);
+                    return;
+                }
                 frappe.call({
                     method: "fast_entry_app.api.location.ping_location",
                     args: { latitude: lat, longitude: lng, accuracy: acc },
@@ -230,6 +279,9 @@ fast_entry_app.LiveMap = class LiveMap {
                             self.refresh_locations();
                         }
                     },
+                    error: function() {
+                        self._queuePing(lat, lng, acc);
+                    }
                 });
             },
             function(err) {
