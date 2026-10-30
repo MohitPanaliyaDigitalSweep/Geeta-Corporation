@@ -267,11 +267,15 @@ function saveVisit(isDraft) {
     if (photoFile) {
         var reader = new FileReader();
         reader.onload = function (ev) {
-            call("frappe.client.attach_file", {
-                filename: photoFile.name,
-                filedata: ev.target.result.split(",")[1],
-                doctype: "Field Visit",
-                is_private: 0,
+            call("frappe.client.insert", {
+                doc: JSON.stringify({
+                    doctype: "File",
+                    file_name: photoFile.name,
+                    folder: "Home",
+                    is_private: 0,
+                    content: ev.target.result.split(",")[1],
+                    decode: 1,
+                }),
             }, function (r, err) {
                 if (err || !r || !r.file_url) {
                     showStatus("Photo upload failed.", "err");

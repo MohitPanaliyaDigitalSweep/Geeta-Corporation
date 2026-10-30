@@ -304,12 +304,16 @@ fast_entry_app.FieldVisit = class FieldVisit {
             const reader = new FileReader();
             reader.onload = function(ev) {
                 frappe.call({
-                    method: "frappe.client.attach_file",
+                    method: "frappe.client.insert",
                     args: {
-                        filename: photoFile.name,
-                        filedata: ev.target.result.split(",")[1],
-                        doctype: "Field Visit",
-                        is_private: 0,
+                        doc: JSON.stringify({
+                            doctype: "File",
+                            file_name: photoFile.name,
+                            folder: "Home",
+                            is_private: 0,
+                            content: ev.target.result.split(",")[1],
+                            decode: 1,
+                        }),
                     },
                     callback: function(r) {
                         if (r.message && r.message.file_url) {
