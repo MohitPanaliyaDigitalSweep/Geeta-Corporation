@@ -239,6 +239,30 @@ def _employee_fields():
 	]
 
 
+def _customer_location_fields():
+	"""Custom fields on Customer/Supplier for map location."""
+	fields = []
+	if frappe.db.table_exists("Customer"):
+		fields.append({
+			"dt": "Customer",
+			"fieldname": "geolocation",
+			"fieldtype": "Geolocation",
+			"label": "Location",
+			"description": "Customer location on map.",
+			"insert_after": "customer_primary_address",
+		})
+	if frappe.db.table_exists("Supplier"):
+		fields.append({
+			"dt": "Supplier",
+			"fieldname": "geolocation",
+			"fieldtype": "Geolocation",
+			"label": "Location",
+			"description": "Supplier location on map.",
+			"insert_after": "supplier_primary_address",
+		})
+	return fields
+
+
 def get_field_definitions():
 	"""All app-owned custom fields, in creation order."""
 	return (
@@ -247,6 +271,7 @@ def get_field_definitions():
 		+ _sales_invoice_fields()
 		+ _purchase_invoice_fields()
 		+ _employee_fields()
+		+ _customer_location_fields()
 	)
 
 

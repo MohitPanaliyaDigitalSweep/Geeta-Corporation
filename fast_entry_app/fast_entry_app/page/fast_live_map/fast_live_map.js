@@ -127,36 +127,21 @@ fast_entry_app.LiveMap = class LiveMap {
         const employee = this.$employee.val() || "";
         const fromDate = self.$from ? self.$from.val() : "";
         const toDate = self.$to ? self.$to.val() : "";
+
+        // Get live locations (includes Employee Checkin fallback)
         frappe.call({
-            method: "fast_entry_app.api.field_visit.get_field_visits",
-            args: { company: company, employee: employee, from_date: fromDate, to_date: toDate, limit: 500 },
+            method: "fast_entry_app.api.field_visit.get_live_locations",
+            args: { company: company },
             callback: function(r) {
-                const visits = r.message || [];
-                // Derive latest location per employee
-                const byEmp = {};
-                visits.forEach(function(v) {
-                    if (!v.latitude || !v.longitude) return;
-                    const key = v.employee;
-                    if (!byEmp[key] || new Date(v.visit_date + ' ' + (v.visit_time || '00:00')) > new Date(byEmp[key].visit_date + ' ' + (byEmp[key].visit_time || '00:00'))) {
-                        byEmp[key] = v;
-                    }
-                });
-                const locations = Object.values(byEmp).map(v => ({
-                    employee: v.employee,
-                    employee_name: v.employee_name,
-                    company: v.company || company,
-                    latitude: v.latitude,
-                    longitude: v.longitude,
-                    visit_date: v.visit_date,
-                    visit_time: v.visit_time,
-                    party_name: v.party_name,
-                    remarks: v.remarks,
-                }));
-                self.$root.find("#lm-count").text(locations.length + " active" + (visits.length ? " (" + visits.length + " visits)" : ""));
+                let locations = r.message || [];
+                if (employee) locations = locations.filter(l => l.employee === employee);
+                self.$root.find("#lm-count").text(locations.length + " active");
                 self.update_markers(locations);
-                self.load_recent_visits(company, employee, fromDate, toDate);
             }
         });
+
+        // Get recent visits for the list (with date filters)
+        self.load_recent_visits(company, employee, fromDate, toDate);
     }
 
     update_markers(locations) {

@@ -128,6 +128,72 @@ def get_field_visits(employee=None, company=None, from_date=None, to_date=None, 
 
 
 @frappe.whitelist()
+def get_customer_locations(company=None):
+    """Get all customers with geolocation data."""
+    filters = {}
+    if company:
+        filters["company"] = company
+    customers = frappe.get_all(
+        "Customer",
+        filters=filters,
+        fields=["name", "customer_name", "geolocation"],
+    )
+    result = []
+    for c in customers:
+        if not c.get("geolocation"):
+            continue
+        try:
+            import json
+            geo = json.loads(c.geolocation) if isinstance(c.geolocation, str) else c.geolocation
+            if isinstance(geo, dict) and geo.get("geometry"):
+                coords = geo["geometry"].get("coordinates", [])
+                if len(coords) >= 2:
+                    result.append({
+                        "name": c.name,
+                        "party_name": c.customer_name or c.name,
+                        "type": "customer",
+                        "latitude": coords[1],
+                        "longitude": coords[0],
+                    })
+        except Exception:
+            pass
+    return result
+
+
+@frappe.whitelist()
+def get_supplier_locations(company=None):
+    """Get all suppliers with geolocation data."""
+    filters = {}
+    if company:
+        filters["company"] = company
+    suppliers = frappe.get_all(
+        "Supplier",
+        filters=filters,
+        fields=["name", "supplier_name", "geolocation"],
+    )
+    result = []
+    for s in suppliers:
+        if not s.get("geolocation"):
+            continue
+        try:
+            import json
+            geo = json.loads(s.geolocation) if isinstance(s.geolocation, str) else s.geolocation
+            if isinstance(geo, dict) and geo.get("geometry"):
+                coords = geo["geometry"].get("coordinates", [])
+                if len(coords) >= 2:
+                    result.append({
+                        "name": s.name,
+                        "party_name": s.supplier_name or s.name,
+                        "type": "supplier",
+                        "latitude": coords[1],
+                        "longitude": coords[0],
+                    })
+        except Exception:
+            pass
+    return result
+
+
+@frappe.whitelist()
 def get_live_locations(company=None):
     """Get latest location for each employee (from Field Visit or Employee Checkin)."""
     # Get latest field visit per employee
