@@ -68,6 +68,18 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "map-pin",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Field Visit",
+   "link_to": "fast-field-visit",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "credit-card",
    "indent": 1,
    "keep_closed": 0,
@@ -190,6 +202,18 @@
    "keep_closed": 0,
    "label": "Stock Report",
    "link_to": "fast-stock-report",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "map",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Live Map",
+   "link_to": "fast-live-map",
    "link_type": "Page",
    "show_arrow": 0,
    "type": "Link"
