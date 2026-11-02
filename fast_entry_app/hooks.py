@@ -130,6 +130,9 @@ fixtures = [
                     "Custom Sales Invoice",
                     "Custom Purchase Invoice",
                     "Custom Quotation",
+                    "Custom Credit Note",
+                    "Custom Debit Note",
+                    "Custom Challan",
                 ],
             ]
         ],
