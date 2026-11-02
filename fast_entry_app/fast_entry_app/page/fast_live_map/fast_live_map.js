@@ -6,6 +6,9 @@ frappe.pages["fast-live-map"].on_page_load = function (wrapper) {
 };
 
 fast_entry_app.LiveMap = class LiveMap {
+    flt(v) { return parseFloat(v) || 0; }
+    fmt(v) { return (this.flt(v)).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    esc(v) { return frappe.utils.escape_html(v == null ? "" : String(v)); }
     constructor(wrapper) {
         this.wrapper = wrapper;
         this.page = wrapper.page;
@@ -105,14 +108,21 @@ fast_entry_app.LiveMap = class LiveMap {
         const self = this;
         const mapEl = this.$root.find("#lm-map")[0];
         const doInit = function() {
-            self.map = L.map(mapEl).setView([20.5937, 78.9629], 5);
-            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            const Lref = (typeof L !== "undefined") ? L : window.L;
+            if (!Lref || typeof Lref.map !== "function") {
+                console.error("Leaflet not available, L =", Lref);
+                // Retry after a delay
+                setTimeout(doInit, 500);
+                return;
+            }
+            self.map = Lref.map(mapEl).setView([20.5937, 78.9629], 5);
+            Lref.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
                 attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 19,
             }).addTo(self.map);
             self.refresh_locations();
         };
-        if (typeof L === "undefined") {
+        if (typeof L === "undefined" && !window.L) {
             frappe.require("leaflet.bundle.js", function() {
                 frappe.require("leaflet.bundle.css", function() { doInit(); });
             });
@@ -171,7 +181,8 @@ fast_entry_app.LiveMap = class LiveMap {
                 self.markers[loc.employee].setLatLng([lat, lng]);
                 self.markers[loc.employee].setPopupContent(popup);
             } else {
-                const marker = L.marker([lat, lng]).addTo(self.map);
+                const Lref = (typeof L !== "undefined") ? L : window.L;
+            const marker = Lref.marker([lat, lng]).addTo(self.map);
                 marker.bindPopup(popup);
                 self.markers[loc.employee] = marker;
             }

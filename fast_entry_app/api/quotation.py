@@ -9,6 +9,22 @@ from fast_entry_app.api.sales import _apply_manual_sales_taxes, _get_sales_tax_t
 
 _get_qt_tax_account = _get_tax_account
 
+# Monkey-patch india_compliance's ignore_gst_validations so fast entry invoices
+# skip the mandatory GSTIN/address checks (normal ERPNext flow).
+try:
+    import india_compliance.gst_india.overrides.transaction as _ic_txn
+
+    _original_ignore_gst = _ic_txn.ignore_gst_validations
+
+    def _patched_ignore_gst(doc):
+        if getattr(getattr(doc, "flags", None), "fast_entry_skip_gst_validation", False):
+            return True
+        return _original_ignore_gst(doc)
+
+    _ic_txn.ignore_gst_validations = _patched_ignore_gst
+except ImportError:
+    pass
+
 
 @frappe.whitelist()
 def create_quotation(data):
@@ -172,6 +188,7 @@ def create_quotation(data):
     qt.run_method("set_missing_values")
     qt.run_method("calculate_taxes_and_totals")
 
+    qt.flags.fast_entry_skip_gst_validation = True
     qt.insert(ignore_permissions=True)
 
     # When GST is disabled, India Compliance may have auto-added tax rows

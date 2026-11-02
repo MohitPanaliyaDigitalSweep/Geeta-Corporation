@@ -5,6 +5,22 @@ from frappe.utils import flt
 from erpnext.controllers.stock_controller import StockController
 from fast_entry_app.api.ict import ensure_ict_accounts
 
+# Monkey-patch india_compliance's ignore_gst_validations so fast entry invoices
+# skip the mandatory GSTIN/address checks (normal ERPNext flow).
+try:
+    import india_compliance.gst_india.overrides.transaction as _ic_txn
+
+    _original_ignore_gst = _ic_txn.ignore_gst_validations
+
+    def _patched_ignore_gst(doc):
+        if getattr(getattr(doc, "flags", None), "fast_entry_skip_gst_validation", False):
+            return True
+        return _original_ignore_gst(doc)
+
+    _ic_txn.ignore_gst_validations = _patched_ignore_gst
+except ImportError:
+    pass
+
 INTER_COMPANY_PRICE_LIST = "Inter Company"
 
 STATE_CODE_MAP = {
@@ -464,6 +480,7 @@ class InterCompanyTransfer(StockController):
         si.flags.ignore_inter_company_validation = 1
         si.flags.ignore_permissions = True
         si.flags.ignore_links = True
+        si.flags.fast_entry_skip_gst_validation = True
         si.run_method("set_missing_values")
         si.selling_price_list = INTER_COMPANY_PRICE_LIST
         si.run_method("calculate_taxes_and_totals")
@@ -509,6 +526,7 @@ class InterCompanyTransfer(StockController):
         pi.flags.ignore_permissions = True
         pi.flags.ignore_links = True
         pi.flags.ignore_cash_flow_validation = True
+        pi.flags.fast_entry_skip_gst_validation = True
         pi.run_method("set_missing_values")
         pi.buying_price_list = INTER_COMPANY_PRICE_LIST
         pi.run_method("calculate_taxes_and_totals")

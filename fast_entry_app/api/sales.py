@@ -8,6 +8,23 @@ from fast_entry_app.api.address import set_default_addresses as _set_default_add
 from fast_entry_app.api.item import get_invoice_uom as _invoice_uom
 from fast_entry_app.api.item import get_item_uom as _pack_factors
 
+# Monkey-patch india_compliance's ignore_gst_validations so fast entry invoices
+# skip the mandatory GSTIN/address checks (normal ERPNext flow). This only
+# affects documents flagged with fast_entry_skip_gst_validation.
+try:
+    import india_compliance.gst_india.overrides.transaction as _ic_txn
+
+    _original_ignore_gst = _ic_txn.ignore_gst_validations
+
+    def _patched_ignore_gst(doc):
+        if getattr(getattr(doc, "flags", None), "fast_entry_skip_gst_validation", False):
+            return True
+        return _original_ignore_gst(doc)
+
+    _ic_txn.ignore_gst_validations = _patched_ignore_gst
+except ImportError:
+    pass
+
 # Reject duplicate submissions within this window (seconds). Prevents
 # repeated Save clicks from creating multiple identical invoices.
 FAST_ENTRY_DEDUP_WINDOW = 120
@@ -315,6 +332,7 @@ def create_sales_invoice(data):
     if dedup_key:
         si.fe_dedup_key = dedup_key
 
+    si.flags.fast_entry_skip_gst_validation = True
     si.insert(ignore_permissions=True)
 
     # When GST is disabled, India Compliance may have auto-added tax rows
