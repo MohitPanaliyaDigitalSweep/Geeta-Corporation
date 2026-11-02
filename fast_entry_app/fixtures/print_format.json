@@ -220,7 +220,7 @@
     "margin_top": 15.0,
     "module": "Accounts",
     "page_number": "Hide",
-    "pdf_generator": "wkhtmltopdf",
+    "pdf_generator": "chrome",
     "print_designer": 0,
     "print_designer_after_table": null,
     "print_designer_body": null,
