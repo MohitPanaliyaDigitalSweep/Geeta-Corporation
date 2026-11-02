@@ -110,6 +110,31 @@ def make_invoice_number(doc) -> str | None:
 	return name
 
 
+@frappe.whitelist()
+def get_naming_series_for_company(company, posting_date=None) -> str | None:
+	"""Return the per-company/per-FY naming-series template for ``company``.
+
+	Used by the client to auto-select the right series when the company (or the
+	posting date's fiscal year) changes on a Sales Invoice form. Returns ``None``
+	when the company abbreviation or fiscal year cannot be resolved, in which
+	case the client leaves the field untouched.
+	"""
+	if not company:
+		return None
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	if not abbr:
+		return None
+	if not posting_date:
+		posting_date = frappe.utils.today()
+	try:
+		short = fiscal_year_short(posting_date, company=company)
+	except Exception:
+		short = None
+	if not short:
+		return None
+	return f"{abbr}/.{'#' * COUNTER_DIGITS}./{short}"
+
+
 def sync_invoice_series_options() -> None:
 	"""Keep the Naming Series dropdown and the amendment rule in sync (idempotent).
 

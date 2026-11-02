@@ -382,11 +382,44 @@ function lock_update_stock_on_fast_entry(frm) {
     frm.set_df_property("update_stock", "read_only", 1);
 }
 
+// ---- auto-select naming series when company / posting date changes ----
+// The per-company / per-FY series (e.g. GC/.######./26-27) cannot be picked
+// by Frappe's stock logic because the financial year sits after the number,
+// so we set it here whenever the company (or posting date) changes on a
+// new/managed document. Manual picks of legacy series are left alone.
+function _fe_managed_series(s) {
+    return !!s && String(s).indexOf("/.######./") !== -1;
+}
+
+function auto_select_naming_series(frm) {
+    if (!frm || !frm.doc || !frm.doc.company) return;
+    var cur = frm.doc.naming_series || "";
+    if (!frm.is_new() && !_fe_managed_series(cur)) return;
+    frappe.call({
+        method: "fast_entry_app.overrides.naming.get_naming_series_for_company",
+        args: { company: frm.doc.company, posting_date: frm.doc.posting_date },
+        callback: function(r) {
+            if (r && r.message) {
+                if (frm.doc.naming_series !== r.message) {
+                    frm.set_value("naming_series", r.message);
+                }
+            }
+        }
+    });
+}
+
 frappe.ui.form.on("Sales Invoice", {
     refresh: function(frm) {
         add_send_buttons(frm);
         default_update_stock(frm);
         lock_update_stock_on_fast_entry(frm);
+        if (frm.is_new()) auto_select_naming_series(frm);
+    },
+    company: function(frm) {
+        auto_select_naming_series(frm);
+    },
+    posting_date: function(frm) {
+        auto_select_naming_series(frm);
     }
 });
 
