@@ -118,5 +118,23 @@ Server only set `si.update_stock = 1` when enabled, never reset to `0`. The desk
 - `hrms/frontend/src/views/FastSalesEntry.vue`
 - `AGENTS.md`
 
+## Latest change: GST sandbox auto-setup also enables the API
+**Problem:** On sites where `GST Settings.enable_api` was off (or `api_secret` was empty), the India Compliance "Use API in Sandbox Mode?" checkbox was hidden (`depends_on: eval: india_compliance.is_api_enabled(doc)` = `enable_api AND (api_secret or conf.ic_api_secret)`). So even the auto-setup's `sandbox_mode = 1` had no visible effect and e-Invoice/e-Waybill testing was blocked.
+
+**Fix (`install.py`):** `setup_gst_sandbox()` now also sets `enable_api = 1` and `api_secret = "test_sandbox_api_key"` (only on no-GSTIN sites, guarded, idempotent) so the API section + Sandbox checkbox become visible and ticked on fresh installs.
+
+**For existing real-data sites** (where the guard skips auto-setup): added `force_enable_gst_sandbox()` (console-callable, not whitelisted) that bypasses the guard and force-sets `enable_api=1`, `api_secret="test_sandbox_api_key"`, `sandbox_mode=1`. Run on the target site:
+```bash
+cd /home/giris/bench/sites
+/home/giris/bench/env/bin/python - <<'PY'
+import frappe
+frappe.init(site="OTHER_SITE.localhost"); frappe.connect()
+from fast_entry_app.install import force_enable_gst_sandbox
+print(force_enable_gst_sandbox())
+frappe.destroy()
+PY
+```
+WARNING: testing only. Never run on a production site that files real GST returns.
+
 ## Open items (from prior logs)
 - Purchase-path save dedupe, B2C `NotApplicableError`, `Contact Phone.phone_nos` candidates, zero-stock company rows, PAT revocation, HRMS fork URL.

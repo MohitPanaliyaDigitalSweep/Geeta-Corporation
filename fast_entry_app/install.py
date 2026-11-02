@@ -95,11 +95,51 @@ def setup_gst_sandbox():
 		settings = frappe.get_doc("GST Settings")
 		api_secret = settings.get_password("api_secret", raise_exception=False) or ""
 
-		if settings.sandbox_mode != 1 or api_secret != "test_sandbox_api_key":
-			settings.flags.ignore_permissions = True
-			settings.sandbox_mode = 1
+		changed = False
+		if settings.enable_api != 1:
+			settings.enable_api = 1
+			changed = True
+		if api_secret != "test_sandbox_api_key":
 			settings.api_secret = "test_sandbox_api_key"
+			changed = True
+		if settings.sandbox_mode != 1:
+			settings.sandbox_mode = 1
+			changed = True
+
+		if changed:
+			settings.flags.ignore_permissions = True
 			settings.save()
 
 	except Exception:
 		frappe.log_error(title="fast_entry_app: failed to enable GST sandbox")
+
+
+def force_enable_gst_sandbox():
+	"""Force-enable GST sandbox mode on ANY site, ignoring the no-GSTIN guard.
+
+	Intended for TESTING / staging copies of real-data sites only. Never run
+	this on a production site that files real GST returns.
+
+	Sets ``enable_api = 1``, ``api_secret = "test_sandbox_api_key"`` and
+	``sandbox_mode = 1`` on the ``GST Settings`` single, so the India
+	Compliance "Use API in Sandbox Mode?" checkbox becomes visible and
+	ticked. Idempotent.
+	"""
+	if "india_compliance" not in frappe.get_installed_apps():
+		frappe.throw("India Compliance is not installed on this site.")
+
+	if not frappe.db.exists("GST Settings", "GST Settings"):
+		frappe.throw("GST Settings doctype is missing.")
+
+	settings = frappe.get_doc("GST Settings")
+	settings.flags.ignore_permissions = True
+	settings.enable_api = 1
+	settings.api_secret = "test_sandbox_api_key"
+	settings.sandbox_mode = 1
+	settings.save()
+	frappe.db.commit()
+	return {
+		"enable_api": settings.enable_api,
+		"sandbox_mode": settings.sandbox_mode,
+		"api_secret_set": bool(settings.get_password("api_secret", raise_exception=False)),
+	}
