@@ -81,6 +81,15 @@ PROPERTY_SETTERS = [
 	# so it was hidden on the standard Sales Invoice form. Auto-expand it
 	# whenever a discount is present so the Net Total / discount is visible.
 	("Sales Invoice", "additional_discount_section", "collapsible_depends_on", "eval:doc.discount_amount", "Data"),
+	# India Compliance hides the API / Sandbox controls behind
+	# `depends_on: eval: india_compliance.is_api_enabled(doc)` (which itself
+	# needs enable_api + api_secret). On a fresh/test site that has no
+	# api_secret yet the whole block is invisible, so the user cannot even tick
+	# "Use API in Sandbox Mode?". Drop the gate so the controls are always
+	# visible; the underlying is_api_enabled() check still governs whether the
+	# API is actually called.
+	("GST Settings", "enable_api", "depends_on", "", "Data"),
+	("GST Settings", "sandbox_mode", "depends_on", "", "Data"),
 ]
 
 
@@ -239,6 +248,30 @@ def _employee_fields():
 	]
 
 
+def _gst_settings_fields():
+	"""A one-click button on India Compliance's GST Settings to enable the
+	test/sandbox gateway (testing only). Only added when India Compliance is
+	installed, since the doctype belongs to that app."""
+	if not frappe.db.exists("DocType", "GST Settings"):
+		return []
+	return [
+		{
+			"dt": "GST Settings",
+			"fieldname": "fe_enable_sandbox",
+			"fieldtype": "Button",
+			"label": "Enable Sandbox (Testing)",
+			"options": "fast_entry_app.install.force_enable_gst_sandbox",
+			"insert_after": "sandbox_mode",
+			"module": MODULE,
+			"description": (
+				"Testing only: force-enables the GST API + Sandbox Mode with the "
+				"shared test credentials. Never use on a production site that "
+				"files real GST returns."
+			),
+		},
+	]
+
+
 def _customer_location_fields():
 	"""Custom fields on Customer/Supplier for map location."""
 	fields = []
@@ -272,6 +305,7 @@ def get_field_definitions():
 		+ _purchase_invoice_fields()
 		+ _employee_fields()
 		+ _customer_location_fields()
+		+ _gst_settings_fields()
 	)
 
 
@@ -293,7 +327,9 @@ def _ensure_custom_fields():
 
 		# ERPNext (and therefore this doctype) may not be installed yet. Skipping
 		# is safe: the same definitions are re-checked on the next migrate.
-		if not frappe.db.table_exists(dt):
+		# Single doctypes (e.g. GST Settings) have no tab<DocType> table, so use
+		# exists("DocType", ...) which covers both Single and regular doctypes.
+		if not frappe.db.exists("DocType", dt):
 			skipped += 1
 			continue
 
@@ -324,7 +360,9 @@ def _ensure_custom_fields():
 def _apply_property_setters():
 	created = updated = 0
 	for doc_type, field_name, property, value, property_type in PROPERTY_SETTERS:
-		if not frappe.db.table_exists(doc_type):
+		# Single doctypes (e.g. GST Settings) have no tab<DocType> table, so
+		# table_exists() wrongly skips them. exists("DocType", ...) covers both.
+		if not frappe.db.exists("DocType", doc_type):
 			continue
 		exists = frappe.db.exists(
 			"Property Setter",

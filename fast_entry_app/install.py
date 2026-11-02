@@ -114,7 +114,20 @@ def setup_gst_sandbox():
 		frappe.log_error(title="fast_entry_app: failed to enable GST sandbox")
 
 
+@frappe.whitelist()
 def force_enable_gst_sandbox():
+	"""Force-enable GST sandbox mode on ANY site, ignoring the no-GSTIN guard.
+
+	Intended for TESTING / staging copies of real-data sites only. Never run
+	this on a production site that files real GST returns.
+
+	Sets ``enable_api = 1``, ``api_secret = "test_sandbox_api_key"`` and
+	``sandbox_mode = 1`` on the ``GST Settings`` single, so the India
+	Compliance "Use API in Sandbox Mode?" checkbox becomes visible and
+	ticked. Idempotent.
+	"""
+	if "Administrator" not in frappe.get_roles() and "System Manager" not in frappe.get_roles():
+		frappe.throw("Only System Managers can enable GST sandbox mode.")
 	"""Force-enable GST sandbox mode on ANY site, ignoring the no-GSTIN guard.
 
 	Intended for TESTING / staging copies of real-data sites only. Never run

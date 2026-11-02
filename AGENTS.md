@@ -136,5 +136,15 @@ PY
 ```
 WARNING: testing only. Never run on a production site that files real GST returns.
 
+## Latest change: GST Settings sandbox controls always visible + one-click button
+**Problem:** The India Compliance "Use API in Sandbox Mode?" checkbox (and `enable_api`) were hidden behind `depends_on: eval: india_compliance.is_api_enabled(doc)` (= `enable_api AND (api_secret or conf.ic_api_secret)`). On a site with an empty `api_secret`, the whole API/sandbox block was invisible, so the user couldn't even see how to enable it.
+
+**Fix:**
+- `setup_custom_fields.py`: added Property Setters removing `depends_on` from `GST Settings.enable_api` and `GST Settings.sandbox_mode` (always visible now), plus a new Custom Field `fe_enable_sandbox` (Button, `options: fast_entry_app.install.force_enable_gst_sandbox`, insert_after `sandbox_mode`).
+- `install.py`: `force_enable_gst_sandbox()` is now `@frappe.whitelist()` with a System Manager/Administrator role guard — one click (or one console call) force-enables `enable_api=1`, `api_secret="test_sandbox_api_key"`, `sandbox_mode=1` on any site, ignoring the no-GSTIN guard. Intended for testing/staging only.
+- `fixtures/custom_field.json`: added the `GST Settings-fe_enable_sandbox` button field.
+
+**Files touched:** `setup_custom_fields.py`, `install.py`, `fixtures/custom_field.json`, `AGENTS.md`.
+
 ## Open items (from prior logs)
 - Purchase-path save dedupe, B2C `NotApplicableError`, `Contact Phone.phone_nos` candidates, zero-stock company rows, PAT revocation, HRMS fork URL.
