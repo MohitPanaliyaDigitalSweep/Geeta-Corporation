@@ -357,6 +357,14 @@ def create_sales_invoice(data):
     if auto_einvoice or auto_ewaybill:
         frappe.db.commit()
 
+    if auto_einvoice and not si.get("customer_address"):
+        # Customer Address is optional on a Sales Invoice (normal ERPNext flow),
+        # but NIC needs one for e-Invoice. Skip quietly instead of raising.
+        frappe.logger().info(
+            f"Fast Entry: e-Invoice skipped for {si.name} — no Customer Address"
+        )
+        auto_einvoice = False
+
     if auto_einvoice:
         try:
             from india_compliance.exceptions import AlreadyGeneratedError, NotApplicableError

@@ -6,7 +6,13 @@ from erpnext.accounts.doctype.purchase_invoice.purchase_invoice import (
 )
 from erpnext.selling.doctype.quotation.quotation import Quotation as _QuotationBase
 
+from fast_entry_app.overrides.gst_relax import apply as _apply_gst_relax
 from fast_entry_app.overrides.taxes_and_totals import calculate_taxes_and_totals
+
+# Imported for every Sales Invoice instance (override_doctype_class), i.e. always
+# before validate() runs, so India Compliance sees the relaxed e-Invoice status
+# setter.  Keeps GSTIN / Customer Address optional, like stock ERPNext.
+_apply_gst_relax()
 
 
 class SalesInvoice(_SalesInvoiceBase):
