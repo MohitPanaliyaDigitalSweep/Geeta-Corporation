@@ -146,7 +146,8 @@ def create_sales_invoice(data):
     si.debit_to = debit_to
     si.currency = currency
     si.conversion_rate = 1.0
-    si.naming_series = "SINV-.YY.-"
+    # Naming series is derived from the company + fiscal year on insert
+    # (overrides/naming.py -> SalesInvoice.autoname), e.g. GC/000001/26-27.
 
     selling_price_list = frappe.db.get_value("Selling Settings", None, "selling_price_list")
     if selling_price_list:

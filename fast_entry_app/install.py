@@ -24,6 +24,21 @@ def after_install():
 	execute()
 	_rename_sidebar_and_icon()
 	setup_gst_sandbox()
+	_setup_invoice_series()
+
+
+def _setup_invoice_series():
+	"""Sales Invoice numbering is <ABBR>/000001/<YY-YY> (see overrides/naming.py).
+
+	Refreshes the Naming Series dropdown for the current companies/fiscal year and
+	pins amendment naming for Sales Invoice. Idempotent; never breaks install.
+	"""
+	try:
+		from fast_entry_app.overrides.naming import sync_invoice_series_options
+
+		sync_invoice_series_options()
+	except Exception:
+		frappe.log_error(title="fast_entry_app: failed to sync invoice naming series")
 
 
 def _rename_sidebar_and_icon():

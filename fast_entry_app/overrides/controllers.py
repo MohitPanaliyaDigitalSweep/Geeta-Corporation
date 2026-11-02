@@ -7,6 +7,7 @@ from erpnext.accounts.doctype.purchase_invoice.purchase_invoice import (
 from erpnext.selling.doctype.quotation.quotation import Quotation as _QuotationBase
 
 from fast_entry_app.overrides.gst_relax import apply as _apply_gst_relax
+from fast_entry_app.overrides.naming import make_invoice_number
 from fast_entry_app.overrides.taxes_and_totals import calculate_taxes_and_totals
 
 # Imported for every Sales Invoice instance (override_doctype_class), i.e. always
@@ -16,6 +17,17 @@ _apply_gst_relax()
 
 
 class SalesInvoice(_SalesInvoiceBase):
+	def autoname(self):
+		"""Company + financial-year numbering: GC/000001/26-27.
+
+		Falls back to the configured naming_series when the company abbreviation
+		or the fiscal year cannot be resolved (e.g. a backdated date outside any
+		Fiscal Year record).
+		"""
+		name = make_invoice_number(self)
+		if name:
+			self.name = name
+
 	def calculate_taxes_and_totals(self):
 		calculate_taxes_and_totals(self)
 
