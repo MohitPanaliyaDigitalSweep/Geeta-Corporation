@@ -486,7 +486,7 @@ fast_entry_app.WhatsAppSend = class WhatsAppSend {
 				} else if (!s.has_api_key || !s.session_id) {
 					$el.html(
 						`<div class="wa-banner wa-banner-err"><i class="fa fa-times-circle"></i>
-						 <div>${__("WhatsApp sending is enabled but incomplete.")} ${__("Set the OpenWA API key and session ID in")} <a href="/app/fast-entry-settings">${__("Fast Entry Settings")}</a>.</div></div>`
+						 <div>${__("WhatsApp sending is enabled but incomplete.")} ${__("Set the GOWA username/password and device ID in")} <a href="/app/fast-entry-settings">${__("Fast Entry Settings")}</a>.</div></div>`
 					);
 				} else {
 					$el.html(

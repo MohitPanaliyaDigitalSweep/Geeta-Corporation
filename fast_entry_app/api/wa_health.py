@@ -1,12 +1,12 @@
-"""Gateway health check for the OpenWA WhatsApp bridge.
+"""Gateway health check for the GOWA WhatsApp bridge.
 
 Separates the layers so an operator can see *where* a problem is, rather than just
 "send failed":
 
     1. settings      - is the integration enabled and fully filled in?
-    2. gateway       - is the HTTP service up and answering /api/health?
-    3. auth          - is the API key accepted (operator role)?
-    4. session       - does the configured session exist, and is its engine loaded?
+    2. gateway       - is the HTTP service up and answering /health?
+    3. auth          - are the Basic Auth credentials accepted?
+    4. device        - does the configured device exist, and is it logged in?
     5. pairing       - is a number linked, so sends can actually succeed?
 """
 
@@ -15,12 +15,12 @@ import urllib.error
 import urllib.request
 
 import frappe
+import requests
 from frappe import _
 
-from fast_entry_app.api import openwa
+from fast_entry_app.api import gowa as openwa  # GOWA replaces OpenWA; keep alias
 from fast_entry_app.api.wa_session import CONNECTED_STATES
 
-# Keep the probe short: this runs on a button click and must feel instant.
 HEALTH_TIMEOUT = 6
 
 LEVEL_OK = "ok"
@@ -39,44 +39,42 @@ def _check(name, level, message, **extra):
 
 
 def _probe_health(base_url):
-	"""GET /api/health without auth. Returns (ok, ms, detail)."""
+	"""GET /health without auth. Returns (ok, ms, detail)."""
 	started = time.monotonic()
-	url = base_url.rstrip("/") + "/api/health"
+	url = base_url.rstrip("/") + "/health"
 	try:
-		with urllib.request.urlopen(url, timeout=HEALTH_TIMEOUT) as resp:
-			raw = resp.read().decode("utf-8", "replace")
-			# Health may be JSON or plain text; report whichever, trimmed.
-			detail = raw.strip()[:120] or "HTTP {0}".format(resp.status)
-			return True, _ms(started), detail
-	except urllib.error.HTTPError as e:
-		# A response at all proves something is listening and speaking HTTP.
-		return True, _ms(started), "HTTP {0} (service is up)".format(e.code)
+		resp = requests.get(url, timeout=HEALTH_TIMEOUT)
+		detail = (resp.text or "").strip()[:120] or "HTTP {0}".format(resp.status_code)
+		return True, _ms(started), detail
+	except requests.exceptions.ConnectionError as e:
+		return False, _ms(started), str(e)[:160]
+	except requests.exceptions.Timeout as e:
+		return False, _ms(started), "Timed out: {0}".format(str(e)[:160])
 	except Exception as e:
 		return False, _ms(started), str(e)[:160]
 
 
 @frappe.whitelist()
 def check_gateway():
-	"""Run the full connectivity check and return a step-by-step report.
-
-	`ok` is True only when every layer passes, i.e. sending should work right now.
-	"""
+	"""Run the full connectivity check and return a step-by-step report."""
 	openwa.require_whatsapp_role()
 
 	checks = []
 	openwa.wa_settings()
 	base_url = openwa.base_url()
-	session_id = openwa.session_id()
-	api_key = openwa.api_key()
+	device_id = openwa.device_id()
+	username = openwa.username()
+	password = openwa.password()
 	enabled = bool(openwa.wa_settings().get("whatsapp_enabled"))
 
 	# --- 1. settings -------------------------------------------------------
 	missing = [
 		label
 		for label, value in (
-			("OpenWA base URL", base_url),
-			("OpenWA session ID", session_id),
-			("OpenWA API key", api_key),
+			("GOWA base URL", base_url),
+			("GOWA device ID", device_id),
+			("GOWA username", username),
+			("GOWA password", password),
 		)
 		if not value
 	]
@@ -128,24 +126,23 @@ def check_gateway():
 	if not up:
 		return _report(checks, False)
 
-	# --- 3+4. auth and session --------------------------------------------
-	if not session_id or not api_key:
+	# --- 3. auth + device -------------------------------------------------
+	if not (device_id and username and password):
 		checks.append(
-			_check(_("Credentials accepted"), LEVEL_ERROR, _("Session ID and API key are required."), passed=False)
+			_check(_("Credentials accepted"), LEVEL_ERROR, _("Device ID, username and password are required."), passed=False)
 		)
 		return _report(checks, False)
 
 	started = time.monotonic()
-	info, error = openwa.request("/api/sessions/{session}", timeout=HEALTH_TIMEOUT * 2)
+	info, error = openwa.request("/devices/{device}", timeout=HEALTH_TIMEOUT * 2)
 	elapsed = _ms(started)
 	if error:
-		# 401/403 means the service is up but the key is wrong - a distinct fix.
 		auth_bad = error.startswith(("401", "403"))
 		checks.append(
 			_check(
 				_("Credentials accepted"),
 				LEVEL_ERROR,
-				_("The gateway rejected the API key ({0}). Re-check the key in Fast Entry Settings.").format(error)
+				_("The gateway rejected the credentials ({0}). Re-check username/password in Fast Entry Settings.").format(error)
 				if auth_bad
 				else error,
 				passed=False,
@@ -158,50 +155,30 @@ def check_gateway():
 		_check(
 			_("Credentials accepted"),
 			LEVEL_OK,
-			_("API key accepted ({0}ms).").format(elapsed),
+			_("Credentials accepted ({0}ms).").format(elapsed),
 			passed=True,
 			ms=elapsed,
 		)
 	)
 
-	name = (info or {}).get("name")
-	status = (info or {}).get("status") or "unknown"
+	res = (info or {}).get("results") or info or {}
+	status = res.get("state") or (info or {}).get("status") or "unknown"
 	checks.append(
 		_check(
-			_("Session reachable"),
+			_("Device reachable"),
 			LEVEL_OK,
-			_("Session \"{0}\" found - state: {1}.").format(name or session_id[:8], status),
+			_("Device \"{0}\" found - state: {1}.").format(device_id, status),
 			passed=True,
 		)
 	)
 
-	# --- 5. engine + pairing ----------------------------------------------
-	engine = bool((info or {}).get("engineLoaded"))
-	checks.append(
-		_check(
-			_("Engine running"),
-			LEVEL_OK if engine else LEVEL_WARN,
-			_("Engine is loaded and can send messages.") if engine
-			else _("Engine is not loaded. Restart the session to bring it up."),
-			passed=engine,
-		)
-	)
-
-	phone = (info or {}).get("phone")
+	# --- 4. pairing -------------------------------------------------------
+	phone = res.get("jid")
+	if phone and "@" in str(phone):
+		phone = str(phone).split("@")[0]
 	linked = status in CONNECTED_STATES or bool(phone)
-	restriction = (info or {}).get("restriction")
-	last_error = (info or {}).get("lastError")
 
-	if restriction:
-		checks.append(
-			_check(
-				_("Number linked"),
-				LEVEL_ERROR,
-				_("WhatsApp restricted this account: {0}").format(restriction),
-				passed=False,
-			)
-		)
-	elif linked:
+	if linked:
 		checks.append(
 			_check(
 				_("Number linked"),
@@ -212,19 +189,16 @@ def check_gateway():
 			)
 		)
 	else:
-		hint = (
-			"Scan the QR in the Connection card above, or use a phone pairing code."
-			if status == "qr_ready"
-			else "Use \"Start session\" in the Connection card, then link a number."
-		)
 		checks.append(
-			_check(_("Number linked"), LEVEL_WARN, _("No number linked yet. {0}").format(hint), passed=False)
+			_check(
+				_("Number linked"),
+				LEVEL_WARN,
+				_("No number linked yet. Scan the QR in the Connection card, or use a pairing code."),
+				passed=False,
+			)
 		)
 
-	if last_error:
-		checks.append(_check(_("Last gateway error"), LEVEL_WARN, str(last_error)[:200], passed=True))
-
-	return _report(checks, True)
+	return _report(checks, linked)
 
 
 def _report(checks, all_ok):

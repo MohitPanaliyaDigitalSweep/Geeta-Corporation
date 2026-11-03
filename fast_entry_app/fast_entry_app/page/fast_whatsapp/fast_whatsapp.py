@@ -41,7 +41,7 @@ def get_whatsapp_status():
 		"enabled": bool(cfg.get("whatsapp_enabled")),
 		"base_url": cfg.get("wa_base_url") or "",
 		"session_id": cfg.get("wa_session_id") or "",
-		"has_api_key": bool(cfg.get_password("wa_api_key", raise_exception=False)),
+		"has_api_key": bool(cfg.get("wa_username") and cfg.get_password("wa_api_key", raise_exception=False)),
 		"print_format": cfg.get("wa_print_format") or "",
 	}
 

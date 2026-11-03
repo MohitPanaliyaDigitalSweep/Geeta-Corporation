@@ -4,40 +4,41 @@
  "creation": "2026-08-05 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
-"field_order": [
-   "default_company",
-   "default_warehouse",
-   "column_break_1",
-   "default_gst_rate",
-   "section_break_purchase",
-   "default_buying_price_list",
-   "default_purchase_tax_template",
-   "column_break_purchase",
-   "auto_increment_bill_no",
-   "section_break_sales",
-   "default_selling_price_list",
-   "default_sales_tax_template",
-   "column_break_sales",
-   "auto_print_after_save",
-   "section_break_behavior",
-   "keep_supplier_after_save",
-   "keep_customer_after_save",
-   "column_break_behavior",
-   "section_break_whatsapp",
-   "whatsapp_enabled",
-   "column_break_whatsapp_1",
-   "wa_base_url",
-   "section_break_whatsapp_auth",
-   "wa_api_key",
-   "column_break_whatsapp_2",
-   "wa_session_id",
-   "section_break_whatsapp_send",
-   "wa_print_format",
-   "wa_caption",
-   "column_break_whatsapp_3",
-   "wa_country_code",
-   "amended_from"
-  ],
+ "field_order": [
+  "default_company",
+  "default_warehouse",
+  "column_break_1",
+  "default_gst_rate",
+  "section_break_purchase",
+  "default_buying_price_list",
+  "default_purchase_tax_template",
+  "column_break_purchase",
+  "auto_increment_bill_no",
+  "section_break_sales",
+  "default_selling_price_list",
+  "default_sales_tax_template",
+  "column_break_sales",
+  "auto_print_after_save",
+  "section_break_behavior",
+  "keep_supplier_after_save",
+  "keep_customer_after_save",
+  "column_break_behavior",
+  "section_break_whatsapp",
+  "whatsapp_enabled",
+  "column_break_whatsapp_1",
+  "wa_base_url",
+  "section_break_whatsapp_auth",
+  "wa_api_key",
+  "wa_username",
+  "column_break_whatsapp_2",
+  "wa_session_id",
+  "section_break_whatsapp_send",
+  "wa_print_format",
+  "wa_caption",
+  "column_break_whatsapp_3",
+  "wa_country_code",
+  "amended_from"
+ ],
  "fields": [
   {
    "fieldname": "default_company",
@@ -145,7 +146,7 @@
   },
   {
    "default": "0",
-   "description": "When enabled, Send buttons push the PDF to WhatsApp directly through the OpenWA gateway instead of opening WhatsApp Web.",
+   "description": "When enabled, Send buttons push the PDF to WhatsApp directly through the GOWA gateway instead of opening WhatsApp Web.",
    "fieldname": "whatsapp_enabled",
    "fieldtype": "Check",
    "label": "Enable WhatsApp Sending"
@@ -155,11 +156,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "http://127.0.0.1:2785",
-   "description": "OpenWA gateway base URL (no trailing slash), e.g. http://127.0.0.1:2785",
+   "default": "http://127.0.0.1:3000",
+   "description": "GOWA gateway base URL (no trailing slash), e.g. http://127.0.0.1:3000",
    "fieldname": "wa_base_url",
    "fieldtype": "Data",
-   "label": "OpenWA Base URL"
+   "label": "GOWA Base URL"
   },
   {
    "fieldname": "section_break_whatsapp_auth",
@@ -167,20 +168,28 @@
    "label": "Authentication"
   },
   {
-   "description": "OpenWA API key with OPERATOR role for the session (X-API-Key).",
+   "description": "GOWA Basic Auth password (X-Device-Id auth uses username + password).",
    "fieldname": "wa_api_key",
    "fieldtype": "Password",
-   "label": "OpenWA API Key"
+   "label": "GOWA Password"
+  },
+  {
+   "default": "admin",
+   "description": "GOWA Basic Auth username.",
+   "fieldname": "wa_username",
+   "fieldtype": "Data",
+   "label": "GOWA Username"
   },
   {
    "fieldname": "column_break_whatsapp_2",
    "fieldtype": "Column Break"
   },
   {
-   "description": "OpenWA session UUID to send through, e.g. de10ccbe-776c-49d3-8559-e9ddf551e9ac",
+   "description": "GOWA device ID to send through, e.g. fast-sales",
    "fieldname": "wa_session_id",
    "fieldtype": "Data",
-   "label": "OpenWA Session ID"
+   "label": "GOWA Device ID",
+   "default": "fast-sales"
   },
   {
    "fieldname": "section_break_whatsapp_send",

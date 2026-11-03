@@ -3,7 +3,7 @@ import os
 import frappe
 from frappe import _
 
-from fast_entry_app.api import openwa
+from fast_entry_app.api import gowa as openwa  # GOWA replaces OpenWA; keep alias for minimal diff
 
 DEFAULT_PRINT_FORMAT = "Custom Sales Invoice"
 DEFAULT_PI_PRINT_FORMAT = "Custom Purchase Invoice"
@@ -137,10 +137,11 @@ def _mailto_url(email, subject, body):
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp via OpenWA gateway (no WhatsApp Web)
+# WhatsApp via GOWA gateway (no WhatsApp Web)
 # ---------------------------------------------------------------------------
 
-# Settings + HTTP transport live in `api/openwa.py`; kept as a local alias for readability.
+# Settings + HTTP transport live in `api/gowa.py` (OpenWA's `api/openwa.py` is
+# kept in the repo for future reference but is no longer the active transport).
 _wa_settings = openwa.wa_settings
 
 
@@ -150,7 +151,7 @@ def _wa_config_error():
 		"not_configured": True,
 		"message": _(
 			"WhatsApp sending is not configured. In Fast Entry Settings enable "
-			"\"WhatsApp Integration\" and set the OpenWA base URL, API key and session ID."
+			"\"WhatsApp Integration\" and set the GOWA base URL, username, password and device ID."
 		),
 	}
 
@@ -329,8 +330,8 @@ def _wa_caption(doc):
 	)
 
 
-def _openwa_send_document(cfg, chat_id, pdf_bytes, filename, caption):
-	"""POST the PDF (base64) to OpenWA's send-document endpoint. Returns (response_dict, error_str)."""
+def _gowa_send_document(cfg, chat_id, pdf_bytes, filename, caption):
+	"""POST the PDF to GOWA's /send/file endpoint. Returns (response_dict, error_str)."""
 	return openwa.send_document(chat_id, pdf_bytes, filename, caption)
 
 
@@ -359,10 +360,10 @@ def _send_doc_whatsapp(doc, number=None):
 
 	filename = "{0}.pdf".format(doc.name)
 	caption = _wa_caption(doc)
-	resp, err = _openwa_send_document(cfg, chat_id, pdf, filename, caption)
+	resp, err = _gowa_send_document(cfg, chat_id, pdf, filename, caption)
 	if not resp:
 		frappe.log_error(
-			"OpenWA send-document failed for {0} {1}: {2}".format(doc.doctype, doc.name, err),
+			"GOWA send-document failed for {0} {1}: {2}".format(doc.doctype, doc.name, err),
 			"invoice_send.py",
 		)
 		return {
@@ -372,7 +373,13 @@ def _send_doc_whatsapp(doc, number=None):
 			"chat_id": chat_id,
 		}
 
-	message_id = resp.get("waMessageId") or resp.get("id")
+	results = resp.get("results") or {}
+	message_id = (
+		results.get("message_id")
+		or resp.get("waMessageId")
+		or resp.get("id")
+		or resp.get("messageId")
+	)
 	return {
 		"ok": True,
 		"name": doc.name,
@@ -401,7 +408,7 @@ def update_party_field(party_type, party_name, fieldname, value):
 
 @frappe.whitelist()
 def send_invoice_whatsapp(invoice_name, number=None):
-	"""Generate PDF and push it to the customer on WhatsApp via the OpenWA gateway (no WhatsApp Web)."""
+	"""Generate PDF and push it to the customer on WhatsApp via the GOWA gateway (no WhatsApp Web)."""
 	si = _get_si(invoice_name)
 	return _send_doc_whatsapp(si, number=number)
 
@@ -442,7 +449,7 @@ def send_invoice_email(invoice_name, recipient=None):
 
 @frappe.whitelist()
 def send_quotation_whatsapp(quotation_name, number=None):
-	"""Generate PDF and push it to the customer on WhatsApp via the OpenWA gateway (no WhatsApp Web)."""
+	"""Generate PDF and push it to the customer on WhatsApp via the GOWA gateway (no WhatsApp Web)."""
 	quo = frappe.get_doc("Quotation", quotation_name)
 	return _send_doc_whatsapp(quo, number=number)
 
@@ -483,7 +490,7 @@ def send_quotation_email(quotation_name, recipient=None):
 
 @frappe.whitelist()
 def send_purchase_invoice_whatsapp(purchase_invoice_name, number=None):
-	"""Generate PDF and push it to the supplier on WhatsApp via the OpenWA gateway (no WhatsApp Web)."""
+	"""Generate PDF and push it to the supplier on WhatsApp via the GOWA gateway (no WhatsApp Web)."""
 	pi = frappe.get_doc("Purchase Invoice", purchase_invoice_name)
 	return _send_doc_whatsapp(pi, number=number)
 

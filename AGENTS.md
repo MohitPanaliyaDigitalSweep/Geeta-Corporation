@@ -146,5 +146,50 @@ WARNING: testing only. Never run on a production site that files real GST return
 
 **Files touched:** `setup_custom_fields.py`, `install.py`, `fixtures/custom_field.json`, `AGENTS.md`.
 
+## Latest change: WhatsApp gateway switched from OpenWA to GOWA
+**Goal:** Replace the OpenWA (Node.js/Chromium, ~209MB) gateway with GOWA (Go binary, ~35MB, no Chromium) for WhatsApp sending from the Fast Entry app.
+
+### Why GOWA
+- 6x lighter memory footprint (35MB vs 209MB)
+- No Chromium/Puppeteer dependency (eliminates download/version issues)
+- No external database (embedded SQLite)
+- PDF send via `file_url` (no base64 encoding needed)
+- Basic Auth (simpler than API keys)
+- More features: scheduled sends, group management, Chatwoot, webhooks, MCP server
+- Built-in web dashboard
+
+### Implementation
+- `api/gowa.py` (new): GOWA client module — `request()`, `send_document()`, `wa_settings()`, `base_url()`, `username()`, `password()`, `device_id()`, `require_whatsapp_role()`, `qr_code_png()`.
+- `api/openwa.py`: **kept unchanged** for future reference (no longer imported).
+- `api/wa_session.py`: rewritten for GOWA API (`/devices/{id}`, `/devices/{id}/login`, `/devices/{id}/reconnect`, `/devices/{id}/logout`, `/devices/{id}/login/code`).
+- `api/wa_health.py`: rewritten for GOWA (health via `/health`, auth via Basic Auth, device status via `/devices/{id}`).
+- `api/invoice_send.py`: imports `gowa as openwa` (alias for minimal diff), updated messages and message_id extraction (`results.message_id`).
+- `page/fast-whatsapp/fast_whatsapp.py`: updated to read GOWA fields (username, device_id).
+- `page/fast-whatsapp/fast_whatsapp.js`: updated config banner text.
+- `doctype/fast_entry_settings`: `wa_base_url` default → `http://127.0.0.1:3000`, added `wa_username` field, repurposed `wa_api_key` as password and `wa_session_id` as device ID, updated labels/descriptions.
+
+### GOWA API mapping
+- Auth: Basic Auth (`Authorization: Basic base64(user:pass)`) + `X-Device-Id` header
+- Health: `GET /health` (no auth)
+- Device status: `GET /devices/{device_id}`
+- QR: `GET /devices/{device_id}/login` (returns raw QR strings, rendered as PNG via `qrcode` library)
+- Send text: `POST /send/message` with `{phone, message}`
+- Send file/PDF: `POST /send/file` with multipart (file + phone + caption)
+- Logout: `POST /devices/{device_id}/logout`
+- Reconnect: `POST /devices/{device_id}/reconnect`
+- Pairing code: `POST /devices/{device_id}/login/code?phone=...`
+
+### Verification
+- Session status: logged_in, connected: True
+- Health check: all 6 checks pass, "Gateway is healthy and ready to send."
+- Invoice send: `send_invoice_whatsapp("GC/000003/26-27")` → ok=True, message_id returned
+- Fast WhatsApp page: CONNECTED, Gateway http://127.0.0.1:3000, no pageerrors
+
+### Files touched
+- `api/gowa.py` (new), `api/wa_session.py`, `api/wa_health.py`, `api/invoice_send.py`
+- `fast_entry_app/doctype/fast_entry_settings/fast_entry_settings.json`
+- `fast_entry_app/page/fast_whatsapp/fast_whatsapp.py`, `fast_whatsapp.js`
+- `AGENTS.md`
+
 ## Open items (from prior logs)
 - Purchase-path save dedupe, B2C `NotApplicableError`, `Contact Phone.phone_nos` candidates, zero-stock company rows, PAT revocation, HRMS fork URL.
