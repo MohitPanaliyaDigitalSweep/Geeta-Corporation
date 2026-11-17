@@ -427,10 +427,13 @@ def validate_sales_invoice(data):
     if not data.get("invoice_date"):
         errors.append("Invoice Date is required")
 
-    if data.get("update_stock") and not data.get("warehouse"):
-        errors.append("Warehouse is required for stock impact")
-
     items = data.get("items", [])
+
+    if data.get("update_stock"):
+        _has_wh = bool(data.get("warehouse")) or any(i.get("warehouse") for i in items)
+        if not _has_wh:
+            errors.append("Warehouse is required for stock impact")
+
     valid_items = [i for i in items if i.get("item_code") and flt(i.get("pcs", 0)) > 0]
     if not valid_items:
         errors.append("At least one item with PCS > 0 is required")
