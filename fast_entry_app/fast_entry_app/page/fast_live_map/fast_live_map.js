@@ -122,7 +122,7 @@ fast_entry_app.LiveMap = class LiveMap {
             }).addTo(self.map);
             self.refresh_locations();
         };
-        if (typeof L === "undefined" && !window.L) {
+        if (typeof L === "undefined" || typeof L.map !== "function") {
             frappe.require("leaflet.bundle.js", function() {
                 frappe.require("leaflet.bundle.css", function() { doInit(); });
             });
