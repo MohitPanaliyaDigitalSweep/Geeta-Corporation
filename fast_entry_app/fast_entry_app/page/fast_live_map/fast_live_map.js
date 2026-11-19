@@ -166,7 +166,7 @@ fast_entry_app.LiveMap = class LiveMap {
         // Get all visits (with date filters) for visit markers
         frappe.call({
             method: "fast_entry_app.api.field_visit.get_field_visits",
-            args: { company: company, employee: employee, from_date: fromDate, to_date: toDate, limit: 500 },
+            args: { company: company, employee: employee, from_date: fromDate, to_date: toDate, limit: 2000 },
             callback: function(r) {
                 const visits = r.message || [];
                 self.all_visits = visits;
