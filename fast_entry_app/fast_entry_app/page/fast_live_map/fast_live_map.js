@@ -77,8 +77,8 @@ fast_entry_app.LiveMap = class LiveMap {
         this.$employee.on("change", () => this.refresh_locations());
         this.$date.on("change", () => this.refresh_locations());
         this.$track.on("click", () => this.toggle_tracking());
-        // Default to empty (show all visits); user can filter by date
-        this.$date.val("");
+        // Default to today
+        this.$date.val(frappe.datetime.get_today());
         this.$consent.on("change", () => {
             frappe.call({
                 method: "fast_entry_app.api.location.set_tracking_consent",
@@ -124,7 +124,7 @@ fast_entry_app.LiveMap = class LiveMap {
                 setTimeout(doInit, 500);
                 return;
             }
-            self.map = Lref.map(mapEl).setView([20.5937, 78.9629], 5);
+            self.map = Lref.map(mapEl).setView([21.1702, 72.8311], 12);
             Lref.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
                 attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 19,
