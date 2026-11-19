@@ -77,8 +77,8 @@ fast_entry_app.LiveMap = class LiveMap {
         this.$employee.on("change", () => this.refresh_locations());
         this.$date.on("change", () => this.refresh_locations());
         this.$track.on("click", () => this.toggle_tracking());
-        // Default to today
-        this.$date.val(frappe.datetime.get_today());
+        // Default to empty (show all visits); user can filter by date
+        this.$date.val("");
         this.$consent.on("change", () => {
             frappe.call({
                 method: "fast_entry_app.api.location.set_tracking_consent",
