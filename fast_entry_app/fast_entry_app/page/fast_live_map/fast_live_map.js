@@ -40,6 +40,8 @@ fast_entry_app.LiveMap = class LiveMap {
                 <div class="fe-header-row">
                     <div class="fe-field"><label>Company</label><select class="fe-input" id="lm-company"></select></div>
                     <div class="fe-field"><label>Employee</label><select class="fe-input" id="lm-employee"><option value="">All Employees</option></select></div>
+                    <div class="fe-field"><label>From Date</label><input type="date" class="fe-input" id="lm-from" /></div>
+                    <div class="fe-field"><label>To Date</label><input type="date" class="fe-input" id="lm-to" /></div>
                     <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><button class="fe-btn fe-btn-primary" id="lm-track" style="width:100%;justify-content:center;"><i class="fa fa-location-arrow"></i> Start Tracking</button></div>
             <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0;"><input type="checkbox" id="lm-consent" checked /> Share Location</label></div>
                     <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="lm-refresh" style="width:100%;justify-content:center;"><i class="fa fa-refresh"></i> Refresh</button></div>
@@ -64,11 +66,15 @@ fast_entry_app.LiveMap = class LiveMap {
         const self = this;
         this.$company = this.$root.find("#lm-company");
         this.$employee = this.$root.find("#lm-employee");
+        this.$from = this.$root.find("#lm-from");
+        this.$to = this.$root.find("#lm-to");
         this.$track = this.$root.find("#lm-track");
         this.$consent = this.$root.find("#lm-consent");
         this.$root.find("#lm-refresh").on("click", () => this.refresh_locations());
         this.$company.on("change", () => { this.load_employees(); this.refresh_locations(); });
         this.$employee.on("change", () => this.refresh_locations());
+        this.$from.on("change", () => this.refresh_locations());
+        this.$to.on("change", () => this.refresh_locations());
         this.$track.on("click", () => this.toggle_tracking());
         this.$consent.on("change", () => {
             frappe.call({
