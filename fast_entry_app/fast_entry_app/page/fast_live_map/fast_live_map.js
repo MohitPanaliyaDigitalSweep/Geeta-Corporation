@@ -44,8 +44,7 @@ fast_entry_app.LiveMap = class LiveMap {
                 <div class="fe-header-row">
                     <div class="fe-field"><label>Company</label><select class="fe-input" id="lm-company"></select></div>
                     <div class="fe-field"><label>Employee</label><select class="fe-input" id="lm-employee"><option value="">All Employees</option></select></div>
-                    <div class="fe-field"><label>From Date</label><input type="date" class="fe-input" id="lm-from" /></div>
-                    <div class="fe-field"><label>To Date</label><input type="date" class="fe-input" id="lm-to" /></div>
+                    <div class="fe-field"><label>Date</label><input type="date" class="fe-input" id="lm-date" /></div>
                     <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><button class="fe-btn fe-btn-primary" id="lm-track" style="width:100%;justify-content:center;"><i class="fa fa-location-arrow"></i> Start Tracking</button></div>
             <div class="fe-field" style="flex:0 0 140px;align-self:flex-end;"><label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0;"><input type="checkbox" id="lm-consent" checked /> Share Location</label></div>
                     <div class="fe-field" style="flex:0 0 120px;align-self:flex-end;"><button class="fe-btn fe-btn-sm" id="lm-refresh" style="width:100%;justify-content:center;"><i class="fa fa-refresh"></i> Refresh</button></div>
@@ -70,16 +69,16 @@ fast_entry_app.LiveMap = class LiveMap {
         const self = this;
         this.$company = this.$root.find("#lm-company");
         this.$employee = this.$root.find("#lm-employee");
-        this.$from = this.$root.find("#lm-from");
-        this.$to = this.$root.find("#lm-to");
+        this.$date = this.$root.find("#lm-date");
         this.$track = this.$root.find("#lm-track");
         this.$consent = this.$root.find("#lm-consent");
         this.$root.find("#lm-refresh").on("click", () => this.refresh_locations());
         this.$company.on("change", () => { this.load_employees(); this.refresh_locations(); });
         this.$employee.on("change", () => this.refresh_locations());
-        this.$from.on("change", () => this.refresh_locations());
-        this.$to.on("change", () => this.refresh_locations());
+        this.$date.on("change", () => this.refresh_locations());
         this.$track.on("click", () => this.toggle_tracking());
+        // Default to today
+        this.$date.val(frappe.datetime.get_today());
         this.$consent.on("change", () => {
             frappe.call({
                 method: "fast_entry_app.api.location.set_tracking_consent",
@@ -145,8 +144,9 @@ fast_entry_app.LiveMap = class LiveMap {
         const self = this;
         const company = this.$company.val() || "";
         const employee = this.$employee.val() || "";
-        const fromDate = self.$from ? self.$from.val() : "";
-        const toDate = self.$to ? self.$to.val() : "";
+        const selDate = self.$date ? self.$date.val() : "";
+        const fromDate = selDate;
+        const toDate = selDate;
         self._locations_loaded = false;
         self._visits_loaded = false;
 

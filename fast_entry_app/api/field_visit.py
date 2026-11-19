@@ -99,9 +99,11 @@ def get_field_visits(employee=None, company=None, from_date=None, to_date=None, 
         filters["employee"] = employee
     if company:
         filters["company"] = company
-    if from_date:
+    if from_date and to_date:
+        filters["visit_date"] = ["between", [from_date, to_date]]
+    elif from_date:
         filters["visit_date"] = [">=", from_date]
-    if to_date:
+    elif to_date:
         filters["visit_date"] = ["<=", to_date]
 
     visits = frappe.get_all(
