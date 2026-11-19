@@ -15,6 +15,10 @@ fast_entry_app.LiveMap = class LiveMap {
         this.map = null;
         this.markers = {};
         this.employees = [];
+        this.employee_locations = [];
+        this.all_visits = [];
+        this._locations_loaded = false;
+        this._visits_loaded = false;
         this._offlineQueue = this._loadOfflineQueue();
         this.build();
         // Flush offline queue when back online
@@ -143,63 +147,104 @@ fast_entry_app.LiveMap = class LiveMap {
         const employee = this.$employee.val() || "";
         const fromDate = self.$from ? self.$from.val() : "";
         const toDate = self.$to ? self.$to.val() : "";
+        self._locations_loaded = false;
+        self._visits_loaded = false;
 
-        // Get live locations (includes Employee Checkin fallback)
+        // Get live locations (includes Employee Checkin fallback) for employee markers
         frappe.call({
             method: "fast_entry_app.api.field_visit.get_live_locations",
             args: { company: company },
             callback: function(r) {
                 let locations = r.message || [];
                 if (employee) locations = locations.filter(l => l.employee === employee);
-                self.$root.find("#lm-count").text(locations.length + " active");
-                self.update_markers(locations);
+                self.employee_locations = locations;
+                self._locations_loaded = true;
+                self._try_render();
             }
         });
 
-        // Get recent visits for the list (with date filters)
-        self.load_recent_visits(company, employee, fromDate, toDate);
+        // Get all visits (with date filters) for visit markers
+        frappe.call({
+            method: "fast_entry_app.api.field_visit.get_field_visits",
+            args: { company: company, employee: employee, from_date: fromDate, to_date: toDate, limit: 500 },
+            callback: function(r) {
+                const visits = r.message || [];
+                self.all_visits = visits;
+                self._visits_loaded = true;
+                self._try_render();
+                self.load_recent_visits(company, employee, fromDate, toDate);
+            }
+        });
     }
 
-    update_markers(locations) {
+    _try_render() {
+        if (this._locations_loaded && this._visits_loaded) {
+            const total = (this.employee_locations || []).length + (this.all_visits || []).length;
+            this.$root.find("#lm-count").text((this.all_visits || []).length + " visits · " + (this.employee_locations || []).length + " active");
+            this.render_all_markers();
+        }
+    }
+
+    render_all_markers() {
         if (!this.map) return;
         const self = this;
-        const newEmps = new Set(locations.map(l => l.employee));
-        Object.keys(this.markers).forEach(function(emp) {
-            if (!newEmps.has(emp)) {
-                self.map.removeLayer(self.markers[emp]);
-                delete self.markers[emp];
-            }
+        const Lref = (typeof L !== "undefined") ? L : window.L;
+        if (!Lref || typeof Lref.map !== "function") return;
+
+        // Clear all existing markers
+        Object.keys(this.markers).forEach(function(key) {
+            self.map.removeLayer(self.markers[key]);
+            delete self.markers[key];
         });
+
         const bounds = [];
-        locations.forEach(function(loc) {
+        const empColors = {};
+        const colors = ['#059669', '#2563eb', '#dc2626', '#f59e0b', '#7c3aed', '#0891b2', '#be185d', '#ea580c'];
+
+        // Employee live location markers (green circles)
+        (this.employee_locations || []).forEach(function(loc, idx) {
             const lat = parseFloat(loc.latitude);
             const lng = parseFloat(loc.longitude);
             if (isNaN(lat) || isNaN(lng)) return;
             bounds.push([lat, lng]);
+            const color = colors[idx % colors.length];
             const popup = `<div style="min-width:180px;">
-                <b style="font-size:13px;">${self.esc(loc.employee_name || loc.employee)}</b><br>
-                <small style="color:#6b7280;">${self.esc(loc.company || "")}</small><br>
+                <b style="font-size:13px;color:${color};">${self.esc(loc.employee_name || loc.employee)}</b><br>
+                <small style="color:#6b7280;">Employee (Live)</small><br>
                 ${loc.party_name ? `<div style="margin-top:4px;"><i class="fa fa-user"></i> ${self.esc(loc.party_name)}</div>` : ""}
                 ${loc.remarks ? `<div style="margin-top:2px;font-size:12px;">${self.esc(loc.remarks)}</div>` : ""}
                 <div style="margin-top:4px;font-size:10px;color:#9ca3af;"><i class="fa fa-clock-o"></i> ${loc.visit_date || ""} ${loc.visit_time || ""}</div>
             </div>`;
-            if (self.markers[loc.employee]) {
-                self.markers[loc.employee].setLatLng([lat, lng]);
-                self.markers[loc.employee].setPopupContent(popup);
-            } else {
-                const Lref = (typeof L !== "undefined") ? L : window.L;
-            const marker = Lref.marker([lat, lng]).addTo(self.map);
-                marker.bindPopup(popup);
-                self.markers[loc.employee] = marker;
-            }
+            const marker = Lref.circleMarker([lat, lng], { radius: 8, fillColor: color, color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9 }).addTo(self.map);
+            marker.bindPopup(popup);
+            self.markers['emp_' + loc.employee] = marker;
         });
-        if (bounds.length > 0 && bounds.length <= 50) {
+
+        // Visit markers (red dots, smaller)
+        (this.all_visits || []).forEach(function(v) {
+            if (!v.latitude || !v.longitude) return;
+            const lat = parseFloat(v.latitude);
+            const lng = parseFloat(v.longitude);
+            if (isNaN(lat) || isNaN(lng)) return;
+            bounds.push([lat, lng]);
+            const popup = `<div style="min-width:180px;">
+                <b style="font-size:12px;color:#dc2626;">${self.esc(v.employee_name || v.employee)}</b><br>
+                <small style="color:#6b7280;">${self.esc(v.visit_type || "Visit")}</small><br>
+                ${v.party_name ? `<div style="margin-top:2px;font-size:11px;"><i class="fa fa-user"></i> ${self.esc(v.party_name)}</div>` : ""}
+                ${v.remarks ? `<div style="margin-top:2px;font-size:11px;">${self.esc(v.remarks)}</div>` : ""}
+                ${v.photo ? `<img src="${v.photo}" style="max-width:120px;margin-top:4px;border-radius:4px;" />` : ""}
+                <div style="margin-top:4px;font-size:10px;color:#9ca3af;"><i class="fa fa-clock-o"></i> ${v.visit_date || ""} ${v.visit_time || ""}</div>
+            </div>`;
+            const marker = Lref.circleMarker([lat, lng], { radius: 4, fillColor: "#dc2626", color: "#fff", weight: 1, opacity: 0.8, fillOpacity: 0.7 }).addTo(self.map);
+            marker.bindPopup(popup);
+            self.markers['visit_' + v.name] = marker;
+        });
+
+        if (bounds.length > 0 && bounds.length <= 200) {
             try { self.map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 }); } catch(e) {}
         }
-        const legend = locations.length
-            ? `${locations.length} employee${locations.length === 1 ? "" : "s"} tracked`
-            : "No active locations";
-        self.$root.find("#lm-legend").text(legend);
+        const total = Object.keys(this.markers).length;
+        self.$root.find("#lm-legend").text(total + " markers (" + (this.employee_locations || []).length + " employees, " + (this.all_visits || []).length + " visits)");
     }
 
     load_recent_visits(company, employee, fromDate, toDate) {
