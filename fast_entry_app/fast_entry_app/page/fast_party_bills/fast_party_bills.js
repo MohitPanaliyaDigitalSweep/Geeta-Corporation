@@ -106,7 +106,7 @@ fast_entry_app.PartyBills = class PartyBills {
                                 ${(p.invoices || []).map(function(inv) {
                                     return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:12px;">
                                         <div><div style="font-weight:500;">${self.esc(inv.name)}</div><div style="color:#6b7280;font-size:11px;">${inv.posting_date}${inv.due_date ? " · Due " + inv.due_date : ""}</div></div>
-                                        <div style="text-align:right;"><div style="font-weight:600;color:${inv.is_overdue ? '#dc2626' : '#374151'};">Rs. ${self.fmt(inv.outstanding_amount)}</div>${inv.is_overdue ? `<div style="font-size:10px;color:#dc2626;font-weight:600;">Overdue ${inv.days_overdue}d</div>` : (inv.days_remaining > 0 ? `<div style="font-size:10px;color:#059669;">${inv.days_remaining}d left</div>` : '')}</div>
+                                        <div style="text-align:right;"><div style="font-size:10px;color:#6b7280;">Bill: Rs. ${self.fmt(inv.grand_total)}</div><div style="font-weight:600;color:${inv.is_overdue ? '#dc2626' : '#374151'};">Due: Rs. ${self.fmt(inv.outstanding_amount)}</div>${inv.is_overdue ? `<div style="font-size:10px;color:#dc2626;font-weight:600;">Overdue ${inv.days_overdue}d</div>` : (inv.days_remaining > 0 ? `<div style="font-size:10px;color:#059669;">${inv.days_remaining}d left</div>` : '')}</div>
                                     </div>`;
                                 }).join("")}
                             </div>
