@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate, getdate
+from frappe.utils import flt, nowdate, getdate, date_diff
 
 
 @frappe.whitelist()
@@ -25,11 +25,12 @@ def get_party_bills_summary(company, party_type="Customer", search=""):
     )
 
     # Group by party
+    from frappe.utils import date_diff
+    today = getdate(nowdate())
     parties = {}
     for inv in invoices:
         p = inv.get(party_field)
         if search and search.lower() not in (p or "").lower():
-            # Also check party name
             pname = frappe.db.get_value(
                 "Customer" if party_type == "Customer" else "Supplier", p,
                 "customer_name" if party_type == "Customer" else "supplier_name"
@@ -48,19 +49,35 @@ def get_party_bills_summary(company, party_type="Customer", search=""):
                 "overdue_amount": 0,
                 "invoice_count": 0,
                 "oldest_due_date": None,
+                "max_days_overdue": 0,
             }
+        from frappe.utils import date_diff
+        today = getdate(nowdate())
+        days_overdue = 0
+        days_remaining = 0
+        if inv.due_date:
+            dd = getdate(inv.due_date)
+            if dd < today:
+                days_overdue = date_diff(today, dd)
+            else:
+                days_remaining = date_diff(dd, today)
         parties[p]["invoices"].append({
             "name": inv.name,
             "posting_date": str(inv.posting_date),
             "due_date": str(inv.due_date) if inv.due_date else None,
             "grand_total": flt(inv.grand_total),
             "outstanding_amount": flt(inv.outstanding_amount),
-            "is_overdue": bool(inv.due_date and getdate(inv.due_date) < getdate(nowdate())),
+            "is_overdue": bool(inv.due_date and getdate(inv.due_date) < today),
+            "days_overdue": days_overdue,
+            "days_remaining": days_remaining,
         })
         parties[p]["total_outstanding"] += flt(inv.outstanding_amount)
         parties[p]["invoice_count"] += 1
         if inv.due_date and getdate(inv.due_date) < getdate(nowdate()):
             parties[p]["overdue_amount"] += flt(inv.outstanding_amount)
+            d_overdue = date_diff(getdate(nowdate()), getdate(inv.due_date))
+            if d_overdue > parties[p]["max_days_overdue"]:
+                parties[p]["max_days_overdue"] = d_overdue
         if parties[p]["oldest_due_date"] is None or (inv.due_date and getdate(inv.due_date) < getdate(parties[p]["oldest_due_date"])):
             parties[p]["oldest_due_date"] = str(inv.due_date) if inv.due_date else None
 
